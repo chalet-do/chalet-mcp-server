@@ -1,0 +1,5 @@
+/chalet-mcp-server
+/dist/
+# A local chalet-cli checkout for development (README); never committed.
+/go.work
+/go.work.sum
