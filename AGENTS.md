@@ -64,3 +64,11 @@ catalog; refresh the two together.
 
 To work on chalet-cli's tool layer and this server at once, use a `go.work`
 that replaces chalet-cli with a local checkout (README). Git ignores it.
+
+## Releasing
+
+A version tag runs `.github/workflows/release.yml`: the tests, then
+GoReleaser, which puts the archives and their checksums on the GitHub
+release and publishes no image. The names of the archives and of the
+checksum file are part of the interface: chalet-app's deploy fetches the
+linux/amd64 archive by its name and checks it against the checksum it pins.

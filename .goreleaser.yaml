@@ -1,0 +1,24 @@
+# Runs on a version tag (.github/workflows/release.yml): the archives and
+# their checksums go on the GitHub release. chalet-app's deploy pins a version
+# and the checksum of its linux/amd64 archive, and builds the image from it.
+version: 2
+
+project_name: chalet-mcp-server
+
+builds:
+  - main: ./cmd/chalet-mcp-server
+    env:
+      - CGO_ENABLED=0
+    # linux/amd64 is the VM's; darwin/arm64 is for running it locally.
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: linux
+        goarch: arm64
+      - goos: darwin
+        goarch: amd64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]

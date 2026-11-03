@@ -77,3 +77,18 @@ beside `go.mod` that replaces chalet-cli with your checkout. Git ignores it.
     use .
 
     replace github.com/chalet-do/chalet-cli => ../chalet-cli
+
+## Releasing
+
+Push a version tag. `.github/workflows/release.yml` runs the tests (the same
+`test.yml` runs on every pull request), then GoReleaser
+(`.goreleaser.yaml`). The archives go on the GitHub release with their
+checksums: `chalet-mcp-server_<version>_linux_amd64.tar.gz` for the VM,
+`chalet-mcp-server_<version>_darwin_arm64.tar.gz` for a local run, and
+`chalet-mcp-server_<version>_checksums.txt`.
+
+    git tag v0.1.0 && git push origin v0.1.0
+
+No image is published. chalet-app's deploy pins the version and the
+checksum of the linux/amd64 archive, builds the image from that archive, and
+loads it on the VM.
