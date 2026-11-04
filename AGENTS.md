@@ -1,8 +1,9 @@
 # chalet-mcp-server
 
-Guidance for agents working in this repo. The README is for the operator:
-what the server is, its configuration, running it locally, releasing it. How
-it works and how to change it belongs here.
+Guidance for agents working in this repo. The README is for the public: what
+the server is, how to connect to it, and what it does with a person's data. It
+names nothing of how Chalet runs it. How the server works, how it is
+configured and how to change it belongs here.
 
 **It knows no Chalet feature.** Its tools are chalet-cli's: the `mcpserver`
 package builds them from the app's catalog (`/agent_catalog.json`), and the
@@ -74,6 +75,21 @@ the gate.
   the MCP SDK, the last two at chalet-cli's versions. Move them
   deliberately, with the tests as the gate.
 
+## Configuration
+
+The environment alone:
+
+| Variable | What | Default |
+|---|---|---|
+| `CHALET_URL` | Where Chalet runs | `https://chalet.do` |
+| `CHALET_MCP_RESOURCE` | This server's URL, as people paste it | `https://mcp.chalet.do/mcp` |
+| `CHALET_MCP_LISTEN` | Where it listens | `:8080` |
+| `CHALET_MCP_CLIENT_SECRET` | Its client secret at Chalet | none: required |
+
+`http://` is accepted for localhost alone. Without the secret the server does
+not start: it says so in one line and exits, so a deploy without it fails its
+health check.
+
 ## Development
 
     go vet ./...
@@ -84,13 +100,19 @@ The tests drive the HTTP handler with real MCP requests against a fake app in
 `internal/hosted/testdata/catalog.json` is a copy of chalet-cli's recorded
 catalog; refresh the two together.
 
-To work on chalet-cli's tool layer and this server at once, use a `go.work`
-that replaces chalet-cli with a local checkout (README). Git ignores it.
+To work on chalet-cli's tool layer and this server at once, put a `go.work`
+beside `go.mod` that replaces chalet-cli with a local checkout. Git ignores it.
+
+    go 1.26.7
+
+    use .
+
+    replace github.com/chalet-do/chalet-cli => ../chalet-cli
 
 ## Releasing
 
 A version tag runs `.github/workflows/release.yml`: the tests, then
 GoReleaser, which puts the archives and their checksums on the GitHub
 release and publishes no image. The names of the archives and of the
-checksum file are part of the interface: chalet-app's deploy fetches the
+checksum file are part of the interface: Chalet's deploy fetches the
 linux/amd64 archive by its name and checks it against the checksum it pins.
