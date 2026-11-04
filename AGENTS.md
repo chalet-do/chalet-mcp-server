@@ -38,9 +38,14 @@ the gate.
   dead, and the 401 makes the client sign in again. Every other failure —
   this server's credential refused, the app away, a 429 — is a 503, with
   `Retry-After` when the exchange gives one, and never a reason to consent
-  again. The app's own no to a grant's identity, such as AI connections off
-  for the account, is a 403 with the app's sentence: the grant survives the
-  switch, and a 401 would make the client throw a good grant away.
+  again.
+- **The identity right after a good exchange** answers for the grant too. A
+  401 or 404 there means the grant died in between (revoked, lapsed, or the
+  person left the account): nothing of it is kept, and the 401 with
+  `invalid_token` makes the client sign in again. A 403 there is the app's
+  ruling, such as AI connections off for the account, and stays a 403 with
+  the app's sentence: the grant survives the switch, and a 401 would make
+  the client throw a good grant away. A 429 or a 5xx is the 503.
 - **A dead token is dropped.** A 401 from the app during a call drops the
   grant from the cache, so the next request exchanges again, and a dead
   grant then gets the 401. The call's own error says to reconnect the app,

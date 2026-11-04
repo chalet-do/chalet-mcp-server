@@ -72,12 +72,21 @@ func (a *fakeApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := nameOf(token)
 	switch r.Method + " " + r.URL.Path {
 	case "GET /my/identity":
-		if name == "switchedoff" {
+		switch name {
+		case "switchedoff":
 			w.WriteHeader(http.StatusForbidden)
 			io.WriteString(w, `{"error":"AI connections are off for this account"}`)
-			return
+		case "expired": // revoked or lapsed between the exchange and this call
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, `{"error":"Unauthorized"}`)
+		case "gone": // the person left the account in between
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":"Not found"}`)
+		case "broken":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			io.WriteString(w, `{"accounts":[{"id":1,"name":"Personal","url":"https://chalet.test/1/"}]}`)
 		}
-		io.WriteString(w, `{"accounts":[{"id":1,"name":"Personal","url":"https://chalet.test/1/"}]}`)
 	case "GET /agent_catalog":
 		if a.catalog != "" {
 			io.WriteString(w, a.catalog)
@@ -146,7 +155,7 @@ func (a *fakeApp) exchange(w http.ResponseWriter, r *http.Request) {
 	scope, life := "", 300
 	switch {
 	case dead:
-	case name == "read", name == "switchedoff", name == "dying":
+	case name == "read", name == "switchedoff", name == "dying", name == "expired", name == "gone", name == "broken":
 		scope = "read"
 	case name == "write", name == "narrowed", name == "tardy":
 		scope = "read write"
@@ -275,10 +284,11 @@ func keys(tools map[string]*mcp.Tool) string {
 	return strings.Join(names, ",")
 }
 
-// Clients sign in on a 401 alone: no token, a dead one, or one not of
-// Chalet's shape, which costs no exchange. The app's own no is a 403 that
-// leaves the grant alone. A server without its credential, and anything else
-// that goes wrong in the exchange, asks for a retry, never a sign-in.
+// Clients sign in on a 401 alone: no token, a dead one, one not of Chalet's
+// shape, which costs no exchange, or a grant whose identity the app refuses
+// with a 401 or 404 right after the exchange. The app's own 403 leaves the
+// grant alone. A server without its credential, and anything else that goes
+// wrong, asks for a retry, never a sign-in.
 func TestSignsInAtTheHTTPLevel(t *testing.T) {
 	challenge := `Bearer resource_metadata="` + metadataURL + `", scope="read"`
 	invalidToken := `Bearer error="invalid_token", resource_metadata="` + metadataURL + `", scope="read"`
@@ -296,6 +306,9 @@ func TestSignsInAtTheHTTPLevel(t *testing.T) {
 		{name: "no secret", token: person("read"), status: 503, body: "no credential"},
 		{name: "no secret and no token", status: 503, body: "no credential"},
 		{name: "AI connections off", secret: "secret", token: person("switchedoff"), status: 403, body: "Chalet answered 403 AI connections are off for this account", exchanges: 1},
+		{name: "a grant that died after its exchange", secret: "secret", token: person("expired"), status: 401, challenge: invalidToken, exchanges: 1},
+		{name: "a person who left the account", secret: "secret", token: person("gone"), status: 401, challenge: invalidToken, exchanges: 1},
+		{name: "an identity that fails", secret: "secret", token: person("broken"), status: 503, exchanges: 1},
 		{name: "a wrong secret", secret: "wrong", token: person("read"), status: 503, exchanges: 1},
 		{name: "a busy exchange", secret: "secret", token: person("busy"), status: 503, retryAfter: "60", exchanges: 1},
 	} {

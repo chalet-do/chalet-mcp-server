@@ -172,13 +172,20 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.grant(r.Context(), token)
 	var refused refusedGrant
+	identity := 0 // the identity's status, when the app refused it
+	if errors.As(err, &refused) {
+		identity = refused.Status
+	}
 	switch {
-	case exchange.IsTerminal(err):
-		// invalid_grant: the person's token is dead, and the client signs in again.
+	case exchange.IsTerminal(err), identity == http.StatusUnauthorized, identity == http.StatusNotFound:
+		// The grant is dead: the exchange said so (invalid_grant), or the
+		// identity right after a good exchange (revoked, lapsed, or the
+		// person left the account). Nothing of it is kept, and the client
+		// signs in again.
 		h.challenge(w, http.StatusUnauthorized, "invalid_token", "read")
 		return
-	case errors.As(err, &refused) && refused.Status < 500 && refused.Status != http.StatusTooManyRequests:
-		// The app's own no, such as AI connections being off: the grant
+	case identity == http.StatusForbidden:
+		// The app's own ruling, such as AI connections being off: the grant
 		// lives on and works again when they are back on, so no 401.
 		http.Error(w, refused.Error(), http.StatusForbidden)
 		return
@@ -376,9 +383,9 @@ func recovered(logger *slog.Logger) mcp.Middleware {
 	}
 }
 
-// refusedGrant is the app's no to a grant's first request, the identity: its
-// ruling, such as AI connections being off for the account, which no retry
-// changes.
+// refusedGrant is the app's no to a grant's first request, the identity,
+// right after a good exchange: the grant died in between (401, 404), the app
+// rules against it (403, such as AI connections off), or the app is away.
 type refusedGrant struct{ *chalet.Response }
 
 func (e refusedGrant) Error() string { return "Chalet answered " + e.Response.Error() }
