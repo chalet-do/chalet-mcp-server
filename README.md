@@ -7,10 +7,10 @@ server by URL and sign in with OAuth. It is the server behind
 Chalet's catalog, over HTTP instead of stdio.
 
 It holds no token of its own. Each request brings the person's token for this
-server, and the server trades it at Chalet's token endpoint, as its own
-client, for a Chalet token that lasts five minutes at most. It keeps that
-token, with the tools built for the person's grant, until shortly before it
-expires.
+server, and the server trades it at Chalet's token endpoint, as the client
+`chalet-mcp-server`, for a Chalet token that lasts five minutes at most. It
+keeps that token, with the tools built for the person's grant, until shortly
+before it expires.
 
 ## Configuration
 
@@ -21,8 +21,7 @@ The environment alone:
 | `CHALET_URL` | Where Chalet runs | `https://chalet.do` |
 | `CHALET_MCP_RESOURCE` | This server's URL, as people paste it | `https://mcp.chalet.do/mcp` |
 | `CHALET_MCP_LISTEN` | Where it listens | `:8080` |
-| `CHALET_MCP_CLIENT_ID` | Its client id at Chalet | `chalet-mcp-server` |
-| `CHALET_MCP_CLIENT_SECRET` | Its client secret | none: required |
+| `CHALET_MCP_CLIENT_SECRET` | Its client secret at Chalet | none: required |
 
 `http://` is accepted for localhost alone. Without `CHALET_MCP_CLIENT_SECRET`
 the server does not start: it says so in one line and exits, so that a

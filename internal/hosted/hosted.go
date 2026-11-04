@@ -42,10 +42,14 @@ type Config struct {
 	// Resource is this server's URL as people paste it, the audience of the
 	// tokens they bring.
 	Resource string
-	// ClientID and ClientSecret are this server's own credential for the
-	// exchange. New refuses a Config without the secret (ErrNoSecret).
-	ClientID, ClientSecret string
+	// ClientSecret is this server's own credential for the exchange, as the
+	// client chalet-mcp-server. New refuses a Config without it (ErrNoSecret).
+	ClientSecret string
 }
+
+// The client this server is at the app's token endpoint: the app makes no
+// other for the exchange.
+const clientID = "chalet-mcp-server"
 
 // ErrNoSecret is New's refusal of a Config without a client secret: the
 // server could sign no one in, and that is its fault, never the person's.
@@ -101,7 +105,7 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	var err error
 	if h.exchanger, err = exchange.New(exchange.Config{
 		TokenURL: h.upstream + "/oauth/token",
-		Auth:     exchange.ClientSecretPost(cfg.ClientID, cfg.ClientSecret),
+		Auth:     exchange.ClientSecretPost(clientID, cfg.ClientSecret),
 	}); err != nil {
 		return nil, err
 	}

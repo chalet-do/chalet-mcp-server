@@ -35,7 +35,6 @@ func run(logger *slog.Logger) error {
 	cfg := hosted.Config{
 		Upstream:     cmp.Or(os.Getenv("CHALET_URL"), "https://chalet.do"),
 		Resource:     cmp.Or(os.Getenv("CHALET_MCP_RESOURCE"), "https://mcp.chalet.do/mcp"),
-		ClientID:     cmp.Or(os.Getenv("CHALET_MCP_CLIENT_ID"), "chalet-mcp-server"),
 		ClientSecret: os.Getenv("CHALET_MCP_CLIENT_SECRET"),
 	}
 	// Without its credential the server does not start, so that the deploy's
@@ -51,7 +50,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("serving Chalet over HTTP", "version", version, "listen", listener.Addr().String(), "url", cfg.Upstream, "resource", cfg.Resource, "client", cfg.ClientID)
+	logger.Info("serving Chalet over HTTP", "version", version, "listen", listener.Addr().String(), "url", cfg.Upstream, "resource", cfg.Resource)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

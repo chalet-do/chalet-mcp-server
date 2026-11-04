@@ -195,7 +195,7 @@ func serve(t *testing.T, secret string, app *fakeApp) string {
 	chalet := httptest.NewServer(app)
 	t.Cleanup(chalet.Close)
 
-	handler, err := New(Config{Upstream: chalet.URL, Resource: "https://mcp.chalet.test/mcp", ClientID: "chalet-mcp-server", ClientSecret: secret}, "test", slog.New(slog.DiscardHandler))
+	handler, err := New(Config{Upstream: chalet.URL, Resource: "https://mcp.chalet.test/mcp", ClientSecret: secret}, "test", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,7 @@ func TestTheTokenNeverReachesTheLog(t *testing.T) {
 				app.ServeHTTP(w, r)
 			}))
 			var log bytes.Buffer
-			handler, err := New(Config{Upstream: chalet.URL, Resource: "https://mcp.chalet.test/mcp", ClientID: "chalet-mcp-server", ClientSecret: "secret"}, "test", slog.New(slog.NewTextHandler(&log, nil)))
+			handler, err := New(Config{Upstream: chalet.URL, Resource: "https://mcp.chalet.test/mcp", ClientSecret: "secret"}, "test", slog.New(slog.NewTextHandler(&log, nil)))
 			if err != nil {
 				t.Fatal(err)
 			}
