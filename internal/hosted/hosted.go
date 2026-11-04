@@ -134,6 +134,11 @@ type hosted struct {
 	// By the SHA-256 of the person's token: the token itself is never kept.
 	grants map[[sha256.Size]byte]*grant
 	flight singleflight.Group
+
+	// The catalog every grant shares, and the body it was parsed from.
+	catalogMu   sync.Mutex
+	catalogBody []byte
+	catalog     *mcpserver.Catalog
 }
 
 // grant is one person's connection as this server holds it: the server built
@@ -281,11 +286,9 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 	}
 	account := who.Accounts[0]
 
-	// Per grant: three calls to the app for each active grant every five
-	// minutes, and a new feature reaches every grant as fast. The app serves
-	// one catalog to every account, so a cache shared by all grants would go
-	// here, when the number of grants makes these calls count.
-	cat, err := mcpserver.LoadCatalog(ctx, client)
+	// Asked for per grant, so that a new feature reaches every grant within
+	// five minutes; parsed only when it changed.
+	cat, err := h.loadCatalog(ctx, client)
 	if err != nil {
 		return nil, probeFailed("catalog", err)
 	}
@@ -302,6 +305,29 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 		return nil, err
 	}
 	return &grant{server: server, retire: token.ExpiresAt.Add(-retireEarly)}, nil
+}
+
+// loadCatalog asks for the catalog with the grant's token and parses it only
+// when its body differs from the last one. Every grant shares the parsed
+// catalog: nothing in the tool layer or the gateway writes into it.
+func (h *hosted) loadCatalog(ctx context.Context, client *chalet.Client) (*mcpserver.Catalog, error) {
+	resp, err := client.Do(ctx, http.MethodGet, "/agent_catalog", nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK() {
+		return nil, fmt.Errorf("could not read the catalog: %s", resp.Error())
+	}
+	h.catalogMu.Lock()
+	defer h.catalogMu.Unlock()
+	if h.catalog == nil || !bytes.Equal(resp.Body, h.catalogBody) {
+		cat, err := mcpserver.ParseCatalog(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		h.catalog, h.catalogBody = cat, resp.Body
+	}
+	return h.catalog, nil
 }
 
 // drop forgets a grant whose delegated token the app refused.

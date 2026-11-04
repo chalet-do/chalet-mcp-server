@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basecamp/mcp/auth/exchange"
 	"github.com/basecamp/mcp/auth/upstream/upstreamtest"
 	"github.com/basecamp/mcp/mcptest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -88,12 +89,14 @@ func (a *fakeApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"accounts":[{"id":1,"name":"Personal","url":"https://chalet.test/1/"}]}`)
 		}
 	case "GET /agent_catalog":
-		if a.catalog != "" {
-			io.WriteString(w, a.catalog)
-			return
+		a.mu.Lock()
+		catalog := a.catalog
+		a.mu.Unlock()
+		if catalog == "" {
+			data, _ := os.ReadFile("testdata/catalog.json")
+			catalog = string(data)
 		}
-		catalog, _ := os.ReadFile("testdata/catalog.json")
-		w.Write(catalog)
+		io.WriteString(w, catalog)
 	case "GET /1/my":
 		if name == "dying" {
 			// The person disconnected the app: its grant ends, and the
@@ -455,6 +458,40 @@ func TestADeadTokenIsDropped(t *testing.T) {
 	}
 	if app.exchanged() != 2 {
 		t.Errorf("exchanged %d times, want the first and one after the drop", app.exchanged())
+	}
+}
+
+// Every grant asks for the catalog, and all of them share the one parsed
+// catalog until its body changes.
+func TestGrantsShareOneCatalog(t *testing.T) {
+	app := &fakeApp{}
+	chalet := httptest.NewServer(app)
+	t.Cleanup(chalet.Close)
+	exchanger, err := exchange.New(exchange.Config{TokenURL: chalet.URL + "/oauth/token", Auth: exchange.ClientSecretPost(clientID, "secret")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &hosted{upstream: chalet.URL, exchanger: exchanger, version: "test", logger: slog.New(slog.DiscardHandler), grants: map[[32]byte]*grant{}}
+
+	var builds sync.WaitGroup
+	for _, name := range []string{"read", "write"} {
+		builds.Go(func() {
+			if _, err := h.grant(t.Context(), person(name)); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	builds.Wait()
+	shared := h.catalog
+	if _, err := h.grant(t.Context(), person("brief")); err != nil || h.catalog != shared {
+		t.Fatalf("a third grant parsed the same catalog again (%v)", err)
+	}
+
+	app.mu.Lock()
+	app.catalog = strings.Replace(string(h.catalogBody), `"version": "1.0"`, `"version": "1.1"`, 1)
+	app.mu.Unlock()
+	if _, err := h.grant(t.Context(), person("dying")); err != nil || h.catalog == shared || h.catalog.Version != "1.1" {
+		t.Errorf("a changed catalog was not parsed anew: version %s (%v)", h.catalog.Version, err)
 	}
 }
 

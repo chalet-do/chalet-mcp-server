@@ -62,8 +62,10 @@ the gate.
   panic in a call into an internal error, on every grant's server.
 - **The cache** keeps one delegated token per grant, with the server built
   for its account and scope, until 10 seconds before the token expires; a
-  burst for one grant exchanges once. The catalog is asked per grant, and a
-  cache shared by every grant would go in `build`.
+  burst for one grant exchanges once. The catalog is asked for per grant and
+  parsed only when its body changed; every grant shares the parsed catalog,
+  which nothing in the tool layer or the gateway writes into
+  (`loadCatalog`).
 - **The budgets**: a request runs for 45 seconds at most, the write timeout
   is 60 seconds, and SIGTERM drains for 30. A request out of time may have
   written already, so its answer (`outOfTime`) says to check before calling
