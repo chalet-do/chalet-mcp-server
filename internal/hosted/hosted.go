@@ -52,15 +52,20 @@ type Config struct {
 }
 
 const (
-	// The most one request may take, the exchange included.
-	requestBudget = 45 * time.Second
 	// A delegated token goes this long before it expires, so none is sent in
 	// its last seconds (the exchange's own skew).
 	retireEarly = 10 * time.Second
 	// How a person signs in again here: in the app, never with chalet auth
 	// login, which is the command line's.
 	signIn = "The connection to Chalet has ended or was revoked: the owner reconnects this app to Chalet and signs in again."
+	// The answer to a request that ran out of time. A write may have gone
+	// through by then, so it says what chalet-cli's own hint for a write says.
+	outOfTime = "Chalet did not answer in time, and a change may have been made: check whether it was done before you call again."
 )
+
+// The most one request may take, the exchange included. A variable so that a
+// test can stand in a shorter one.
+var requestBudget = 45 * time.Second
 
 // accessToken is the shape of the token a person's app brings, as Chalet
 // mints it: the prefix and 44 base58 characters.
@@ -105,7 +110,7 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 
 	mux := http.NewServeMux()
 	// Only POST: the mux answers GET and DELETE with 405.
-	mux.Handle("POST "+resource.Path, http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, "Chalet did not answer in time: try again."))
+	mux.Handle("POST "+resource.Path, http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime))
 	mux.Handle(metadataPath, auth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
 		Resource:               cfg.Resource,
 		AuthorizationServers:   []string{h.upstream},

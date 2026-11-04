@@ -48,6 +48,7 @@ type fakeApp struct {
 	mu        sync.Mutex
 	exchanges int
 	slow      chan struct{}   // when set, an exchange waits until it is closed
+	tardy     chan struct{}   // when set, the tardy grant's write waits until it is closed
 	dead      map[string]bool // grants that ended after their exchange
 	sent      []*http.Request
 }
@@ -97,6 +98,9 @@ func (a *fakeApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		io.WriteString(w, `{"assignments":[{"id":"todo-1","type":"Todo","title":"Call Anna"}]}`)
 	case "POST /1/todos/todo-1/completion":
+		if name == "tardy" {
+			<-a.tardy
+		}
 		if name == "narrowed" {
 			// The grant lost write after the exchange: the app's answer to a
 			// read token's write.
@@ -144,7 +148,7 @@ func (a *fakeApp) exchange(w http.ResponseWriter, r *http.Request) {
 	case dead:
 	case name == "read", name == "switchedoff", name == "dying":
 		scope = "read"
-	case name == "write", name == "narrowed":
+	case name == "write", name == "narrowed", name == "tardy":
 		scope = "read write"
 	case name == "brief":
 		scope, life = "read", 5
@@ -417,6 +421,23 @@ func TestExchangesOncePerGrant(t *testing.T) {
 	post(t, url+"/mcp", person("brief"), initialize)
 	if app.exchanged() != 3 {
 		t.Errorf("a token with 5 seconds left was kept: %d exchanges", app.exchanged())
+	}
+}
+
+// A request that runs out of time may have changed Chalet already: the answer
+// says to check before the call goes again, not only to try again.
+func TestARequestOutOfTimeSaysToCheck(t *testing.T) {
+	budget := requestBudget
+	requestBudget = 300 * time.Millisecond
+	t.Cleanup(func() { requestBudget = budget })
+
+	app := &fakeApp{tardy: make(chan struct{})}
+	url := serve(t, "secret", app)
+	t.Cleanup(func() { close(app.tardy) }) // before the servers close, which wait for it
+
+	resp, body := post(t, url+"/mcp", person("tardy"), toolCall("chalet_todos_write", `{"action":"complete","params":{"todo_id":"todo-1"}}`))
+	if resp.StatusCode != 503 || !strings.Contains(body, "a change may have been made: check whether it was done before you call again") {
+		t.Fatalf("the late write = %d %q", resp.StatusCode, body)
 	}
 }
 

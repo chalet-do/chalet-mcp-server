@@ -55,7 +55,9 @@ the gate.
   burst for one grant exchanges once. The catalog is asked per grant, and a
   cache shared by every grant would go in `build`.
 - **The budgets**: a request runs for 45 seconds at most, the write timeout
-  is 60 seconds, and SIGTERM drains for 30.
+  is 60 seconds, and SIGTERM drains for 30. A request out of time may have
+  written already, so its answer (`outOfTime`) says to check before calling
+  again, never only to try again.
 - **The libraries in `go.mod`** are pinned: chalet-cli, the MCP toolkit and
   the MCP SDK, the last two at chalet-cli's versions. Move them
   deliberately, with the tests as the gate.

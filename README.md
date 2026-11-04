@@ -44,10 +44,12 @@ credential, the answer is a 503: try again later, never sign in again. When
 the account has AI connections off, the answer is a 403 that says so, and the
 grant works again once they are back on.
 
-A request runs for 45 seconds at most, and a response is written within 60.
-On SIGTERM the server lets the requests in flight finish, for up to 30
-seconds. It writes one line to stderr for each request, with the client's
-address from `X-Forwarded-For`, and never a token.
+A request runs for 45 seconds at most, and a response is written within 60. A
+request that runs out of time gets a 503 that says a change may have been
+made, and to check whether it was done before calling again. On SIGTERM the
+server lets the requests in flight finish, for up to 30 seconds. It writes
+one line to stderr for each request, with the client's address from
+`X-Forwarded-For`, and never a token.
 
 ## Run it locally
 
