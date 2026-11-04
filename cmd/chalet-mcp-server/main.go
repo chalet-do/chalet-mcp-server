@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -37,13 +38,12 @@ func run(logger *slog.Logger) error {
 		ClientID:     cmp.Or(os.Getenv("CHALET_MCP_CLIENT_ID"), "chalet-mcp-server"),
 		ClientSecret: os.Getenv("CHALET_MCP_CLIENT_SECRET"),
 	}
-	// Without its credential the server could sign no one in: it does not
-	// start, so that the deploy's health check fails, rather than serve
-	// errors.
-	if cfg.ClientSecret == "" {
-		return errors.New("CHALET_MCP_CLIENT_SECRET is not set: without it the server cannot sign anyone in, so it does not start")
-	}
+	// Without its credential the server does not start, so that the deploy's
+	// health check fails, rather than serve errors.
 	handler, err := hosted.New(cfg, version, logger)
+	if errors.Is(err, hosted.ErrNoSecret) {
+		return fmt.Errorf("CHALET_MCP_CLIENT_SECRET is not set: %w", err)
+	}
 	if err != nil {
 		return err
 	}

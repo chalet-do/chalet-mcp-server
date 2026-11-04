@@ -43,10 +43,13 @@ type Config struct {
 	// tokens they bring.
 	Resource string
 	// ClientID and ClientSecret are this server's own credential for the
-	// exchange. Without the secret it holds none, and every request gets a
-	// 503: that is the server's fault, never the person's.
+	// exchange. New refuses a Config without the secret (ErrNoSecret).
 	ClientID, ClientSecret string
 }
+
+// ErrNoSecret is New's refusal of a Config without a client secret: the
+// server could sign no one in, and that is its fault, never the person's.
+var ErrNoSecret = errors.New("no client secret, so the server could sign no one in")
 
 const (
 	// A delegated token goes this long before it expires, so none is sent in
@@ -83,6 +86,9 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	if resource.Path == "" {
 		return nil, fmt.Errorf("resource %s: needs a path, like https://mcp.chalet.do/mcp", cfg.Resource)
 	}
+	if cfg.ClientSecret == "" {
+		return nil, ErrNoSecret
+	}
 	metadataPath := "/.well-known/oauth-protected-resource" + resource.Path
 
 	h := &hosted{
@@ -92,14 +98,12 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 		logger:      logger,
 		grants:      map[[sha256.Size]byte]*grant{},
 	}
-	if cfg.ClientSecret != "" {
-		var err error
-		if h.exchanger, err = exchange.New(exchange.Config{
-			TokenURL: h.upstream + "/oauth/token",
-			Auth:     exchange.ClientSecretPost(cfg.ClientID, cfg.ClientSecret),
-		}); err != nil {
-			return nil, err
-		}
+	var err error
+	if h.exchanger, err = exchange.New(exchange.Config{
+		TokenURL: h.upstream + "/oauth/token",
+		Auth:     exchange.ClientSecretPost(cfg.ClientID, cfg.ClientSecret),
+	}); err != nil {
+		return nil, err
 	}
 	h.mcp = mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return r.Context().Value(grantKey{}).(*grant).server.MCP
@@ -122,7 +126,7 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 type hosted struct {
 	upstream    string
 	metadataURL string
-	exchanger   *exchange.Exchanger // nil without a secret
+	exchanger   *exchange.Exchanger
 	mcp         http.Handler
 	version     string
 	logger      *slog.Logger
@@ -147,12 +151,6 @@ type grantKey struct{}
 // challenge is HTTP: a client signs in on a 401 and steps up on a 403 with
 // insufficient_scope, and a tool result with isError starts neither.
 func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
-	if h.exchanger == nil {
-		// No credential: a 401 would send the person to sign in, which
-		// cannot help.
-		http.Error(w, "This server has no credential for Chalet: try again later.", http.StatusServiceUnavailable)
-		return
-	}
 	token := bearerToken(r)
 	switch {
 	case token == "":

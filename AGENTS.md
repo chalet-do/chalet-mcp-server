@@ -32,10 +32,6 @@ the gate.
   the call runs. A write that the app itself refuses, which only a token
   cached from before a narrowing refresh can meet, gets the tool's
   `forbidden` error.
-- **No client secret is the server's fault, never the person's.** Without
-  `CHALET_MCP_CLIENT_SECRET` the binary does not start, so a misconfigured
-  deploy fails its health check. A handler built without one answers every
-  request with a 503, never the 401, which would send people to sign in.
 - **Only a token of Chalet's shape costs an exchange**: `chalet_at_` and 44
   base58 characters (`accessToken`). Every exchange spends this server's one
   budget at the app, which every person signed in here shares, so any other

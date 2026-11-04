@@ -279,8 +279,8 @@ func keys(tools map[string]*mcp.Tool) string {
 // Clients sign in on a 401 alone: no token, a dead one, one not of Chalet's
 // shape, which costs no exchange, or a grant whose identity the app refuses
 // with a 401 or 404 right after the exchange. The app's own 403 leaves the
-// grant alone. A server without its credential, and anything else that goes
-// wrong, asks for a retry, never a sign-in.
+// grant alone, and anything else that goes wrong asks for a retry, never a
+// sign-in.
 func TestSignsInAtTheHTTPLevel(t *testing.T) {
 	challenge := `Bearer resource_metadata="` + metadataURL + `", scope="read"`
 	invalidToken := `Bearer error="invalid_token", resource_metadata="` + metadataURL + `", scope="read"`
@@ -295,8 +295,6 @@ func TestSignsInAtTheHTTPLevel(t *testing.T) {
 		{name: "a personal access token", secret: "secret", token: "chalet_pat_" + padded("read"), status: 401, challenge: invalidToken},
 		{name: "a token too short", secret: "secret", token: "chalet_at_read", status: 401, challenge: invalidToken},
 		{name: "a token with a 0", secret: "secret", token: "chalet_at_" + strings.Repeat("0", 44), status: 401, challenge: invalidToken},
-		{name: "no secret", token: person("read"), status: 503, body: "no credential"},
-		{name: "no secret and no token", status: 503, body: "no credential"},
 		{name: "AI connections off", secret: "secret", token: person("switchedoff"), status: 403, body: "Chalet answered 403 AI connections are off for this account", exchanges: 1},
 		{name: "a grant that died after its exchange", secret: "secret", token: person("expired"), status: 401, challenge: invalidToken, exchanges: 1},
 		{name: "a person who left the account", secret: "secret", token: person("gone"), status: 401, challenge: invalidToken, exchanges: 1},
@@ -317,7 +315,7 @@ func TestSignsInAtTheHTTPLevel(t *testing.T) {
 }
 
 func TestAnswersItsOwnRoutes(t *testing.T) {
-	handler, err := New(Config{Upstream: "https://chalet.do", Resource: "https://mcp.chalet.do/mcp"}, "test", slog.New(slog.DiscardHandler))
+	handler, err := New(Config{Upstream: "https://chalet.do", Resource: "https://mcp.chalet.do/mcp", ClientSecret: "secret"}, "test", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
