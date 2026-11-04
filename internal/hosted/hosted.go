@@ -170,19 +170,19 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.grant(r.Context(), token)
 	var probe *upstream.Failure
-	identity := 0 // the identity's status, when the app refused it
+	refused := 0 // the status of the identity or the catalog, when the app refused it
 	if errors.As(err, &probe) {
-		identity = probe.Status
+		refused = probe.Status
 	}
 	switch {
-	case exchange.IsTerminal(err), identity == http.StatusUnauthorized, identity == http.StatusNotFound:
+	case exchange.IsTerminal(err), refused == http.StatusUnauthorized, refused == http.StatusNotFound:
 		// The grant is dead: the exchange said so (invalid_grant), or the
-		// identity right after a good exchange (revoked, lapsed, or the
-		// person left the account). Nothing of it is kept, and the client
-		// signs in again.
+		// identity or the catalog right after a good exchange (revoked,
+		// lapsed, or the person left the account). Nothing of it is kept, and
+		// the client signs in again.
 		h.challenge(w, http.StatusUnauthorized, "invalid_token", "read")
 		return
-	case identity == http.StatusForbidden:
+	case refused == http.StatusForbidden:
 		// The app's own ruling, such as AI connections being off: the grant
 		// lives on and works again when they are back on, so no 401. The
 		// person reads the app's words, scrubbed as the log has them.
@@ -314,7 +314,9 @@ func (h *hosted) loadCatalog(ctx context.Context, client *chalet.Client) (*mcpse
 		return nil, err
 	}
 	if !resp.OK() {
-		return nil, fmt.Errorf("could not read the catalog: %s", resp.Error())
+		// A refusal, as the identity's is, so that it keeps its status: a grant
+		// that died since is a 401, AI connections switched off a 403.
+		return nil, chalet.Refusal{Response: resp}
 	}
 	h.catalogMu.Lock()
 	defer h.catalogMu.Unlock()
