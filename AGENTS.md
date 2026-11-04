@@ -17,7 +17,12 @@ the gate.
 - **Never log, print or keep a token**, the person's or the delegated one.
   The cache keys a grant by the SHA-256 of the person's token. A request
   writes one log line, with no header in it. A panic is logged with its
-  stack, never with the request.
+  stack, never with the request. A broken answer can echo the delegated
+  token, so the grant's first requests, the identity and the catalog, fail
+  as the toolkit's `upstream.Failure` (`probeFailed`): it renders no cause,
+  and the app's words only scrubbed, in the log as in the 403 a person
+  reads. Their test runs the toolkit's hostile answers (`upstreamtest`)
+  against both.
 - **Every challenge is HTTP.** The hosted clients sign in on a 401 and step
   up on a 403 with `insufficient_scope`; a tool result with `isError` starts
   neither. The 401 (`resource_metadata`, `scope="read"`) answers no token,

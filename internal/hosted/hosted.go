@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/basecamp/mcp/auth/exchange"
+	"github.com/basecamp/mcp/auth/upstream"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
@@ -167,10 +168,10 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g, err := h.grant(r.Context(), token)
-	var refused refusedGrant
+	var probe *upstream.Failure
 	identity := 0 // the identity's status, when the app refused it
-	if errors.As(err, &refused) {
-		identity = refused.Status
+	if errors.As(err, &probe) {
+		identity = probe.Status
 	}
 	switch {
 	case exchange.IsTerminal(err), identity == http.StatusUnauthorized, identity == http.StatusNotFound:
@@ -182,8 +183,9 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	case identity == http.StatusForbidden:
 		// The app's own ruling, such as AI connections being off: the grant
-		// lives on and works again when they are back on, so no 401.
-		http.Error(w, refused.Error(), http.StatusForbidden)
+		// lives on and works again when they are back on, so no 401. The
+		// person reads the app's words, scrubbed as the log has them.
+		http.Error(w, "Chalet answered "+upstream.ScrubDescription(probe.Description), http.StatusForbidden)
 		return
 	case err != nil:
 		h.unavailable(w, err)
@@ -287,12 +289,8 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 	client := &chalet.Client{BaseURL: h.upstream, Token: token.AccessToken, UserAgent: "chalet-mcp-server/" + h.version}
 
 	who, err := client.Identity(ctx)
-	var refused chalet.Refusal
-	if errors.As(err, &refused) {
-		return nil, refusedGrant{refused.Response}
-	}
 	if err != nil {
-		return nil, err
+		return nil, probeFailed("identity", err)
 	}
 	if len(who.Accounts) != 1 {
 		return nil, fmt.Errorf("the identity of a grant names %d accounts, not one", len(who.Accounts))
@@ -305,7 +303,7 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 	// here, when the number of grants makes these calls count.
 	cat, err := mcpserver.LoadCatalog(ctx, client)
 	if err != nil {
-		return nil, err
+		return nil, probeFailed("catalog", err)
 	}
 
 	client.Account = strconv.Itoa(account.ID)
@@ -331,12 +329,23 @@ func (h *hosted) drop(key [sha256.Size]byte) {
 
 type stepUpKey struct{}
 
-// refusedGrant is the app's no to a grant's first request, the identity,
-// right after a good exchange: the grant died in between (401, 404), the app
-// rules against it (403, such as AI connections off), or the app is away.
-type refusedGrant struct{ *chalet.Response }
-
-func (e refusedGrant) Error() string { return "Chalet answered " + e.Response.Error() }
+// probeFailed is a failure of the grant's first requests, the identity and
+// the catalog, as the toolkit's upstream.Failure. They carry the delegated
+// token, and a broken answer can echo it back, into a transport's error or
+// into the app's own words; a Failure renders no cause, and its description
+// only scrubbed of anything shaped like a token. A refusal keeps its status,
+// so that a dead grant (401, 404) is told from the app's ruling (403).
+func probeFailed(request string, err error) *upstream.Failure {
+	var refused chalet.Refusal
+	if errors.As(err, &refused) {
+		f := upstream.New(request, "Chalet refused it", refused.Status, err)
+		f.Description = refused.Response.Error()
+		return f
+	}
+	f := upstream.New(request, "Chalet did not answer it", 0, err)
+	f.Description = err.Error()
+	return f
+}
 
 // hostedAPI is the client as this server holds it, and it sees every answer
 // of the app to the grant's calls. A 401 means the delegated token died, most

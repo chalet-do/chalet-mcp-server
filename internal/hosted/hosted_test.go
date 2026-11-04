@@ -1,7 +1,9 @@
 package hosted
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basecamp/mcp/auth/upstream/upstreamtest"
 	"github.com/basecamp/mcp/mcptest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -488,6 +491,51 @@ func TestTakesNoLocalFiles(t *testing.T) {
 	for _, r := range app.requests() {
 		if r.Method == http.MethodPost {
 			t.Errorf("%s reached the app", r.URL.Path)
+		}
+	}
+}
+
+// The grant's first requests, the identity and then the catalog, carry the
+// delegated token, and a broken answer can echo it back: no hostile answer
+// puts it, or the toolkit's planted token, into the log or before the person.
+func TestTheTokenNeverReachesTheLog(t *testing.T) {
+	hostile := map[string]http.Handler{
+		// The app's own words in a 403, which the person reads.
+		"echoed 403 sentence": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprintf(w, `{"error":%q}`, upstreamtest.Echo(r))
+		}),
+	}
+	for _, kind := range upstreamtest.Kinds {
+		hostile[string(kind)] = upstreamtest.Handler(kind)
+	}
+
+	for _, probed := range []string{"/my/identity", "/agent_catalog"} {
+		for kind, answer := range hostile {
+			app := &fakeApp{}
+			chalet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == probed {
+					answer.ServeHTTP(w, r)
+					return
+				}
+				app.ServeHTTP(w, r)
+			}))
+			var log bytes.Buffer
+			handler, err := New(Config{Upstream: chalet.URL, Resource: "https://mcp.chalet.test/mcp", ClientID: "chalet-mcp-server", ClientSecret: "secret"}, "test", slog.New(slog.NewTextHandler(&log, nil)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(handler)
+
+			resp, body := post(t, server.URL+"/mcp", person("write"), initialize)
+			if resp.StatusCode == http.StatusOK {
+				t.Errorf("%s at %s: signed in", kind, probed)
+			}
+			upstreamtest.AssertClean(t, kind+" at "+probed+", the log", log.String(), delegated("write"), upstreamtest.Planted)
+			upstreamtest.AssertClean(t, kind+" at "+probed+", the answer", body, delegated("write"), upstreamtest.Planted)
+
+			server.Close()
+			chalet.Close()
 		}
 	}
 }
