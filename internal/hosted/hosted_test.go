@@ -110,14 +110,6 @@ func (a *fakeApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if name == "tardy" {
 			<-a.tardy
 		}
-		if name == "narrowed" {
-			// The grant lost write after the exchange: the app's answer to a
-			// read token's write.
-			w.Header().Set("WWW-Authenticate", `Bearer realm="Chalet", error="insufficient_scope", scope="write"`)
-			w.WriteHeader(http.StatusForbidden)
-			io.WriteString(w, `{"error":"Forbidden"}`)
-			return
-		}
 		w.WriteHeader(http.StatusNoContent)
 	case "POST /1/recordings/todo-1/trash":
 		w.WriteHeader(http.StatusPreconditionRequired)
@@ -157,7 +149,7 @@ func (a *fakeApp) exchange(w http.ResponseWriter, r *http.Request) {
 	case dead:
 	case name == "read", name == "switchedoff", name == "dying", name == "expired", name == "gone", name == "broken":
 		scope = "read"
-	case name == "write", name == "narrowed", name == "tardy":
+	case name == "write", name == "tardy":
 		scope = "read write"
 	case name == "brief":
 		scope, life = "read", 5
@@ -397,11 +389,6 @@ func TestServesWhatTheGrantAllows(t *testing.T) {
 	// No browser on a server: the link is the owner's to follow.
 	if text, isError := mcptest.CallText(t, write, "chalet_destructive", map[string]any{"action": "trash", "params": map[string]any{"recording_id": "todo-1"}}); isError || !strings.Contains(text, "Not done yet: Trash “Call Anna” in Website? Give the owner the confirm page: "+confirmURL) {
 		t.Errorf("trash = %q (error %v)", text, isError)
-	}
-
-	// The exchange said write, the app says no: the client asks for write.
-	if resp, _ := post(t, url+"/mcp", person("narrowed"), toolCall("chalet_todos_write", `{"action":"complete","params":{"todo_id":"todo-1"}}`)); resp.StatusCode != 403 || resp.Header.Get("WWW-Authenticate") != stepUp {
-		t.Errorf("the app's insufficient_scope = %d %q", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
 	}
 }
 

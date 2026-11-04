@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -23,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/basecamp/mcp/auth/exchange"
@@ -202,18 +200,7 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 		h.challenge(w, http.StatusForbidden, "insufficient_scope", "write")
 		return
 	}
-
-	// The answer is held until the call is done: a call the app refused as
-	// insufficient_scope goes out as the 403 that asks for write instead.
-	wantsWrite := new(atomic.Bool)
-	ctx := context.WithValue(context.WithValue(r.Context(), grantKey{}, g), stepUpKey{}, wantsWrite)
-	held := &answer{header: http.Header{}}
-	h.mcp.ServeHTTP(held, r.WithContext(ctx))
-	if wantsWrite.Load() {
-		h.challenge(w, http.StatusForbidden, "insufficient_scope", "write")
-		return
-	}
-	held.sendTo(w)
+	h.mcp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), grantKey{}, g)))
 }
 
 func (h *hosted) challenge(w http.ResponseWriter, status int, code, scope string) {
@@ -327,8 +314,6 @@ func (h *hosted) drop(key [sha256.Size]byte) {
 	delete(h.grants, key)
 }
 
-type stepUpKey struct{}
-
 // probeFailed is a failure of the grant's first requests, the identity and
 // the catalog, as the toolkit's upstream.Failure. They carry the delegated
 // token, and a broken answer can echo it back, into a transport's error or
@@ -350,10 +335,8 @@ func probeFailed(request string, err error) *upstream.Failure {
 // hostedAPI is the client as this server holds it, and it sees every answer
 // of the app to the grant's calls. A 401 means the delegated token died, most
 // likely with its grant: the grant is dropped, so the next request exchanges
-// again, and a dead grant then gets the 401 challenge. A 403 with
-// insufficient_scope means the grant may only read: the request's answer
-// becomes the 403 that asks for write. The person's files are not here, so
-// none goes up.
+// again, and a dead grant then gets the 401 challenge. The person's files are
+// not here, so none goes up.
 type hostedAPI struct {
 	*chalet.Client
 	drop func()
@@ -361,25 +344,19 @@ type hostedAPI struct {
 
 func (a hostedAPI) Do(ctx context.Context, method, path string, query url.Values, body map[string]any, header http.Header) (*chalet.Response, error) {
 	resp, err := a.Client.Do(ctx, method, path, query, body, header)
-	a.heard(ctx, resp)
+	a.heard(resp)
 	return resp, err
 }
 
 func (a hostedAPI) Fetch(ctx context.Context, link string) (*chalet.Response, error) {
 	resp, err := a.Client.Fetch(ctx, link)
-	a.heard(ctx, resp)
+	a.heard(resp)
 	return resp, err
 }
 
-func (a hostedAPI) heard(ctx context.Context, resp *chalet.Response) {
-	switch {
-	case resp == nil:
-	case resp.Status == http.StatusUnauthorized:
+func (a hostedAPI) heard(resp *chalet.Response) {
+	if resp != nil && resp.Status == http.StatusUnauthorized {
 		a.drop()
-	case resp.Status == http.StatusForbidden && strings.Contains(resp.Header.Get("WWW-Authenticate"), "insufficient_scope"):
-		if wanted, ok := ctx.Value(stepUpKey{}).(*atomic.Bool); ok {
-			wanted.Store(true)
-		}
 	}
 }
 
@@ -407,32 +384,6 @@ func bearerToken(r *http.Request) string {
 		return ""
 	}
 	return fields[1]
-}
-
-// answer holds a response until it is complete.
-type answer struct {
-	header http.Header
-	status int
-	body   bytes.Buffer
-}
-
-func (a *answer) Header() http.Header { return a.header }
-
-func (a *answer) WriteHeader(status int) {
-	if a.status == 0 {
-		a.status = status
-	}
-}
-
-func (a *answer) Write(p []byte) (int, error) {
-	a.WriteHeader(http.StatusOK)
-	return a.body.Write(p)
-}
-
-func (a *answer) sendTo(w http.ResponseWriter) {
-	maps.Copy(w.Header(), a.header)
-	w.WriteHeader(cmp.Or(a.status, http.StatusOK))
-	w.Write(a.body.Bytes())
 }
 
 // logged writes a line to the log for each request, and never a header, so

@@ -27,9 +27,11 @@ the gate.
   up on a 403 with `insufficient_scope`; a tool result with `isError` starts
   neither. The 401 (`resource_metadata`, `scope="read"`) answers no token,
   or the exchange's `invalid_grant`. The 403 `insufficient_scope`
-  (`scope="write"`) answers a write tool on a read grant, and the app's own
-  403 `insufficient_scope` during a call: the MCP answer is held until the
-  call is done, so that it can still become the 403.
+  (`scope="write"`) answers a read grant's call of a tool that needs write,
+  one the library's read-only build held back (`Server.HeldBack`), before
+  the call runs. A write that the app itself refuses, which only a token
+  cached from before a narrowing refresh can meet, gets the tool's
+  `forbidden` error.
 - **No client secret is the server's fault, never the person's.** Without
   `CHALET_MCP_CLIENT_SECRET` the binary does not start, so a misconfigured
   deploy fails its health check. A handler built without one answers every
