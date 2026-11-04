@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -244,11 +245,8 @@ func (h *hosted) grant(ctx context.Context, subject string) (*grant, error) {
 		}
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		for k, old := range h.grants { // the expired go as the new come
-			if time.Now().After(old.retire) {
-				delete(h.grants, k)
-			}
-		}
+		now := time.Now() // the expired go as the new come
+		maps.DeleteFunc(h.grants, func(_ [sha256.Size]byte, old *grant) bool { return now.After(old.retire) })
 		h.grants[key] = g
 		return g, nil
 	})

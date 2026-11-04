@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -271,12 +272,7 @@ func failed(t *testing.T, text string) failure {
 }
 
 func keys(tools map[string]*mcp.Tool) string {
-	var names []string
-	for name := range tools {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return strings.Join(names, ",")
+	return strings.Join(slices.Sorted(maps.Keys(tools)), ",")
 }
 
 // Clients sign in on a 401 alone: no token, a dead one, one without the
