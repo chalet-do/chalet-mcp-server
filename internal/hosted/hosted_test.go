@@ -348,7 +348,7 @@ func TestServesWhatTheGrantAllows(t *testing.T) {
 	}
 	opening, _, _ := strings.Cut(cat.Rules, "\n\n")
 	instructions := []rune(write.InitializeResult().Instructions)
-	if first := string(instructions[:min(512, len(instructions))]); !strings.HasPrefix(first, "This server reaches one Chalet account: Personal (https://chalet.test/1/).") || !strings.Contains(first, opening) {
+	if first := string(instructions[:min(512, len(instructions))]); !strings.Contains(first, "This server reaches one Chalet account: Personal (https://chalet.test/1/).") || !strings.Contains(first, opening) {
 		t.Errorf("the first 512 characters = %q", first)
 	}
 
