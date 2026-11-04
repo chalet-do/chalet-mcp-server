@@ -21,10 +21,14 @@ the gate.
 - **Every challenge is HTTP.** The hosted clients sign in on a 401 and step
   up on a 403 with `insufficient_scope`; a tool result with `isError` starts
   neither. The 401 (`resource_metadata`, `scope="read"`) answers no token,
-  no client secret, or the exchange's `invalid_grant`. The 403
-  `insufficient_scope` (`scope="write"`) answers a write tool on a read
-  grant, and the app's own 403 `insufficient_scope` during a call: the MCP
-  answer is held until the call is done, so that it can still become the 403.
+  or the exchange's `invalid_grant`. The 403 `insufficient_scope`
+  (`scope="write"`) answers a write tool on a read grant, and the app's own
+  403 `insufficient_scope` during a call: the MCP answer is held until the
+  call is done, so that it can still become the 403.
+- **No client secret is the server's fault, never the person's.** Without
+  `CHALET_MCP_CLIENT_SECRET` the binary does not start, so a misconfigured
+  deploy fails its health check. A handler built without one answers every
+  request with a 503, never the 401, which would send people to sign in.
 - **Only a token of Chalet's shape costs an exchange**: `chalet_at_` and 44
   base58 characters (`accessToken`). Every exchange spends this server's one
   budget at the app, which every person signed in here shares, so any other

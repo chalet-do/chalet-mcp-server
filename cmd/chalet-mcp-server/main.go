@@ -7,6 +7,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -24,7 +25,7 @@ var version = "dev"
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(logger); err != nil {
-		logger.Error("stopped", "error", err)
+		logger.Error(err.Error())
 		os.Exit(1)
 	}
 }
@@ -36,6 +37,12 @@ func run(logger *slog.Logger) error {
 		ClientID:     cmp.Or(os.Getenv("CHALET_MCP_CLIENT_ID"), "chalet-mcp-server"),
 		ClientSecret: os.Getenv("CHALET_MCP_CLIENT_SECRET"),
 	}
+	// Without its credential the server could sign no one in: it does not
+	// start, so that the deploy's health check fails, rather than serve
+	// errors.
+	if cfg.ClientSecret == "" {
+		return errors.New("CHALET_MCP_CLIENT_SECRET is not set: without it the server cannot sign anyone in, so it does not start")
+	}
 	handler, err := hosted.New(cfg, version, logger)
 	if err != nil {
 		return err
@@ -43,9 +50,6 @@ func run(logger *slog.Logger) error {
 	listener, err := net.Listen("tcp", cmp.Or(os.Getenv("CHALET_MCP_LISTEN"), ":8080"))
 	if err != nil {
 		return err
-	}
-	if cfg.ClientSecret == "" {
-		logger.Warn("CHALET_MCP_CLIENT_SECRET is not set: every request gets the 401")
 	}
 	logger.Info("serving Chalet over HTTP", "version", version, "listen", listener.Addr().String(), "url", cfg.Upstream, "resource", cfg.Resource, "client", cfg.ClientID)
 

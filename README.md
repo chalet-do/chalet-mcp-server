@@ -22,9 +22,11 @@ The environment alone:
 | `CHALET_MCP_RESOURCE` | This server's URL, as people paste it | `https://mcp.chalet.do/mcp` |
 | `CHALET_MCP_LISTEN` | Where it listens | `:8080` |
 | `CHALET_MCP_CLIENT_ID` | Its client id at Chalet | `chalet-mcp-server` |
-| `CHALET_MCP_CLIENT_SECRET` | Its client secret | none: every request gets the 401 |
+| `CHALET_MCP_CLIENT_SECRET` | Its client secret | none: required |
 
-`http://` is accepted for localhost alone.
+`http://` is accepted for localhost alone. Without `CHALET_MCP_CLIENT_SECRET`
+the server does not start: it says so in one line and exits, so that a
+deploy without the secret fails its health check.
 
 ## What it answers
 

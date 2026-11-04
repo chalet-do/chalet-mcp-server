@@ -46,8 +46,8 @@ type Config struct {
 	// tokens they bring.
 	Resource string
 	// ClientID and ClientSecret are this server's own credential for the
-	// exchange. Without the secret it holds none, and every request gets the
-	// 401: dark until configured.
+	// exchange. Without the secret it holds none, and every request gets a
+	// 503: that is the server's fault, never the person's.
 	ClientID, ClientSecret string
 }
 
@@ -147,9 +147,15 @@ type grantKey struct{}
 // challenge is HTTP: a client signs in on a 401 and steps up on a 403 with
 // insufficient_scope, and a tool result with isError starts neither.
 func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
+	if h.exchanger == nil {
+		// No credential: a 401 would send the person to sign in, which
+		// cannot help.
+		http.Error(w, "This server has no credential for Chalet: try again later.", http.StatusServiceUnavailable)
+		return
+	}
 	token := bearerToken(r)
 	switch {
-	case token == "" || h.exchanger == nil:
+	case token == "":
 		h.challenge(w, http.StatusUnauthorized, "", "read")
 		return
 	case !accessToken.MatchString(token):

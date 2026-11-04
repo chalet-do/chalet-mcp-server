@@ -271,11 +271,10 @@ func keys(tools map[string]*mcp.Tool) string {
 	return strings.Join(names, ",")
 }
 
-// Clients sign in on a 401 alone: no token, a dead one, one not of Chalet's
-// shape, or a server that holds no credential yet. A token not of Chalet's
-// shape costs no exchange. The app's own no is a 403 that leaves the grant
-// alone, and anything else that goes wrong in the exchange asks for a retry,
-// never a sign-in.
+// Clients sign in on a 401 alone: no token, a dead one, or one not of
+// Chalet's shape, which costs no exchange. The app's own no is a 403 that
+// leaves the grant alone. A server without its credential, and anything else
+// that goes wrong in the exchange, asks for a retry, never a sign-in.
 func TestSignsInAtTheHTTPLevel(t *testing.T) {
 	challenge := `Bearer resource_metadata="` + metadataURL + `", scope="read"`
 	invalidToken := `Bearer error="invalid_token", resource_metadata="` + metadataURL + `", scope="read"`
@@ -290,7 +289,8 @@ func TestSignsInAtTheHTTPLevel(t *testing.T) {
 		{name: "a personal access token", secret: "secret", token: "chalet_pat_" + padded("read"), status: 401, challenge: invalidToken},
 		{name: "a token too short", secret: "secret", token: "chalet_at_read", status: 401, challenge: invalidToken},
 		{name: "a token with a 0", secret: "secret", token: "chalet_at_" + strings.Repeat("0", 44), status: 401, challenge: invalidToken},
-		{name: "no secret", token: person("read"), status: 401, challenge: challenge},
+		{name: "no secret", token: person("read"), status: 503, body: "no credential"},
+		{name: "no secret and no token", status: 503, body: "no credential"},
 		{name: "AI connections off", secret: "secret", token: person("switchedoff"), status: 403, body: "Chalet answered 403 AI connections are off for this account", exchanges: 1},
 		{name: "a wrong secret", secret: "wrong", token: person("read"), status: 503, exchanges: 1},
 		{name: "a busy exchange", secret: "secret", token: person("busy"), status: 503, retryAfter: "60", exchanges: 1},
