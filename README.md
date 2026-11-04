@@ -34,12 +34,13 @@ The environment alone:
 - `GET /.well-known/oauth-protected-resource/mcp`: where a client signs in.
 
 A request without a token, or with one that Chalet refuses, gets a 401 that
-tells the client where to sign in. A *Read* grant lists the reading tools
-alone, and a call that needs more gets a 403 that asks for *Read and write*.
-When Chalet does not answer, or refuses this server's own credential, the
-answer is a 503: try again later, never sign in again. When the account has
-AI connections off, the answer is a 403 that says so, and the grant works
-again once they are back on.
+tells the client where to sign in. A token that is not of the shape Chalet
+mints gets the 401 at once, without a call to Chalet. A *Read* grant lists
+the reading tools alone, and a call that needs more gets a 403 that asks for
+*Read and write*. When Chalet does not answer, or refuses this server's own
+credential, the answer is a 503: try again later, never sign in again. When
+the account has AI connections off, the answer is a 403 that says so, and the
+grant works again once they are back on.
 
 A request runs for 45 seconds at most, and a response is written within 60.
 On SIGTERM the server lets the requests in flight finish, for up to 30

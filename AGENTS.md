@@ -25,6 +25,10 @@ the gate.
   `insufficient_scope` (`scope="write"`) answers a write tool on a read
   grant, and the app's own 403 `insufficient_scope` during a call: the MCP
   answer is held until the call is done, so that it can still become the 403.
+- **Only a token of Chalet's shape costs an exchange**: `chalet_at_` and 44
+  base58 characters (`accessToken`). Every exchange spends this server's one
+  budget at the app, which every person signed in here shares, so any other
+  bearer gets the 401 at once, and a made-up token starves no one.
 - **The exchange forks into terminal or retry** (the toolkit's
   `auth/exchange`). Only `invalid_grant` is terminal: the person's token is
   dead, and the 401 makes the client sign in again. Every other failure —

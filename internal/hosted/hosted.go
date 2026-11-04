@@ -18,6 +18,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strconv"
@@ -60,6 +61,10 @@ const (
 	// login, which is the command line's.
 	signIn = "The connection to Chalet has ended or was revoked: the owner reconnects this app to Chalet and signs in again."
 )
+
+// accessToken is the shape of the token a person's app brings, as Chalet
+// mints it: the prefix and 44 base58 characters.
+var accessToken = regexp.MustCompile(`^chalet_at_[1-9A-HJ-NP-Za-km-z]{44}$`)
 
 // New is the server's HTTP handler: a POST to the resource's path is MCP,
 // stateless, answered in JSON; GET /up is the health check; and the
@@ -143,8 +148,15 @@ type grantKey struct{}
 // insufficient_scope, and a tool result with isError starts neither.
 func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	token := bearerToken(r)
-	if token == "" || h.exchanger == nil {
+	switch {
+	case token == "" || h.exchanger == nil:
 		h.challenge(w, http.StatusUnauthorized, "", "read")
+		return
+	case !accessToken.MatchString(token):
+		// Not of the shape of Chalet's access tokens: refused here, so that a
+		// made-up token never spends an exchange, whose budget at the app
+		// every person signed in here shares.
+		h.challenge(w, http.StatusUnauthorized, "invalid_token", "read")
 		return
 	}
 	g, err := h.grant(r.Context(), token)
