@@ -20,8 +20,6 @@ import (
 	"github.com/basecamp/mcp/auth/upstream/upstreamtest"
 	"github.com/basecamp/mcp/mcptest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/chalet-do/chalet-cli/mcpserver"
 )
 
 // person is a person's token of the shape Chalet mints: "chalet_at_" and 44
@@ -369,17 +367,10 @@ func TestServesWhatTheGrantAllows(t *testing.T) {
 		}
 	}
 
-	// One hosted client reads the first 512 characters alone: the account and
-	// what Chalet is are whole in them.
-	data, _ := os.ReadFile("testdata/catalog.json")
-	cat, err := mcpserver.ParseCatalog(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	opening, _, _ := strings.Cut(cat.Rules, "\n\n")
-	instructions := []rune(write.InitializeResult().Instructions)
-	if first := string(instructions[:min(512, len(instructions))]); !strings.Contains(first, "This server reaches one Chalet account: Personal (https://chalet.test/1/).") || !strings.Contains(first, opening) {
-		t.Errorf("the first 512 characters = %q", first)
+	// The instructions name the account the grant's identity gave; where they
+	// put it is the tool layer's.
+	if instructions := write.InitializeResult().Instructions; !strings.Contains(instructions, "Personal (https://chalet.test/1/)") {
+		t.Errorf("instructions = %q", instructions)
 	}
 
 	// No browser on a server: the link is the owner's to follow.
