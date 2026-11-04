@@ -4,7 +4,7 @@ go 1.26.7
 
 require (
 	github.com/basecamp/mcp v0.0.0-20261030141750-45f0629c39c7
-	github.com/chalet-do/chalet-cli v0.3.3-0.20261103171238-1f96ba7ba2d3
+	github.com/chalet-do/chalet-cli v0.3.3-0.20261104074409-f58f50519c6f
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	golang.org/x/sync v0.20.0
 )
