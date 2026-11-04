@@ -1,0 +1,32 @@
+name: Uptime
+
+# A bridge until there is a monitoring system: every ten minutes, ask the app
+# and this server whether they answer, and fail if one does not. GitHub mails
+# a failed run to whoever added this schedule (Settings > Notifications >
+# Actions). It runs a schedule when it can, at times late, and pauses one in a
+# public repository after 60 days without a commit, after a mail.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The app answers
+        run: curl --fail --silent --show-error --max-time 10 --retry 3 --retry-delay 10 --retry-all-errors https://chalet.do/up
+
+      - name: The MCP server answers
+        run: curl --fail --silent --show-error --max-time 10 --retry 3 --retry-delay 10 --retry-all-errors https://mcp.chalet.do/up
+
+      # Without a token the server answers 401 with its challenge: proof that
+      # the proxy routes to it and it signs people in, which /up alone is not.
+      - name: The MCP server asks for a token
+        run: |
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 10 --retry 3 --retry-delay 10 -X POST https://mcp.chalet.do/mcp)
+          echo "POST /mcp answered $status"
+          test "$status" = 401
