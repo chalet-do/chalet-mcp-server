@@ -88,6 +88,16 @@ func (a *fakeApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"accounts":[{"id":1,"name":"Personal","url":"https://chalet.test/1/"}]}`)
 		}
 	case "GET /agent_catalog":
+		switch name {
+		case "lapsing": // its grant ends between the identity and the catalog
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, `{"error":"Unauthorized"}`)
+			return
+		case "shut": // the switch goes off between the identity and the catalog
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, `{"error":"AI connections are off for this account"}`)
+			return
+		}
 		a.mu.Lock()
 		catalog := a.catalog
 		a.mu.Unlock()
@@ -149,7 +159,7 @@ func (a *fakeApp) exchange(w http.ResponseWriter, r *http.Request) {
 	scope, life := "", 300
 	switch {
 	case dead:
-	case name == "read", name == "switchedoff", name == "dying", name == "expired", name == "gone", name == "broken":
+	case name == "read", name == "switchedoff", name == "dying", name == "expired", name == "gone", name == "broken", name == "lapsing", name == "shut":
 		scope = "read"
 	case name == "write", name == "tardy":
 		scope = "read write"
@@ -294,6 +304,8 @@ func TestSignsInAtTheHTTPLevel(t *testing.T) {
 		{name: "AI connections off", secret: "secret", token: person("switchedoff"), status: 403, body: "Chalet answered 403 AI connections are off for this account", exchanges: 1},
 		{name: "a grant that died after its exchange", secret: "secret", token: person("expired"), status: 401, challenge: invalidToken, exchanges: 1},
 		{name: "a person who left the account", secret: "secret", token: person("gone"), status: 401, challenge: invalidToken, exchanges: 1},
+		{name: "a grant that died before its catalog", secret: "secret", token: person("lapsing"), status: 401, challenge: invalidToken, exchanges: 1},
+		{name: "AI connections off before the catalog", secret: "secret", token: person("shut"), status: 403, body: "Chalet answered 403 AI connections are off for this account", exchanges: 1},
 		{name: "an identity that fails", secret: "secret", token: person("broken"), status: 503, exchanges: 1},
 		{name: "a wrong secret", secret: "wrong", token: person("read"), status: 503, exchanges: 1},
 		{name: "a busy exchange", secret: "secret", token: person("busy"), status: 503, retryAfter: "60", exchanges: 1},
