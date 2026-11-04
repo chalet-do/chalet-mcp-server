@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,7 +28,6 @@ import (
 
 	"github.com/basecamp/mcp/auth/exchange"
 	"github.com/modelcontextprotocol/go-sdk/auth"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"golang.org/x/sync/singleflight"
@@ -140,10 +138,8 @@ type hosted struct {
 // for its one account and its scope, the delegated token inside, until the
 // token is about to expire.
 type grant struct {
-	server     *mcpserver.Server
-	writes     bool
-	writeTools map[string]bool // the tools a write grant has; a read grant's call to one asks for write
-	retire     time.Time
+	server *mcpserver.Server
+	retire time.Time
 }
 
 type grantKey struct{}
@@ -200,7 +196,7 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
-	if !g.writes && g.writeTools[calledTool(body)] {
+	if slices.Contains(g.server.HeldBack, calledTool(body)) {
 		h.challenge(w, http.StatusForbidden, "insufficient_scope", "write")
 		return
 	}
@@ -290,22 +286,13 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 	}
 	client := &chalet.Client{BaseURL: h.upstream, Token: token.AccessToken, UserAgent: "chalet-mcp-server/" + h.version}
 
-	resp, err := client.Do(ctx, http.MethodGet, "/my/identity", nil, nil, nil)
+	who, err := client.Identity(ctx)
+	var refused chalet.Refusal
+	if errors.As(err, &refused) {
+		return nil, refusedGrant{refused.Response}
+	}
 	if err != nil {
 		return nil, err
-	}
-	if !resp.OK() {
-		return nil, refusedGrant{resp}
-	}
-	var who struct {
-		Accounts []struct {
-			ID   int    `json:"id"`
-			Name string `json:"name"`
-			URL  string `json:"url"`
-		} `json:"accounts"`
-	}
-	if err := json.Unmarshal(resp.Body, &who); err != nil {
-		return nil, fmt.Errorf("unexpected identity from %s: %w", h.upstream, err)
 	}
 	if len(who.Accounts) != 1 {
 		return nil, fmt.Errorf("the identity of a grant names %d accounts, not one", len(who.Accounts))
@@ -322,66 +309,27 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 	}
 
 	client.Account = strconv.Itoa(account.ID)
-	// "read" or "read write"; none at all is the narrowest grant.
-	writes := slices.Contains(strings.Fields(token.Scope), "write")
-	server, err := mcpserver.New(cat, hostedAPI{client}, nil, mcpserver.Config{
-		Writes:  writes,
-		Account: fmt.Sprintf("%s (%s)", account.Name, account.URL),
+	api := hostedAPI{Client: client, drop: func() { h.drop(key) }}
+	server, err := mcpserver.New(cat, api, nil, mcpserver.Config{
+		// "read" or "read write"; none at all is the narrowest grant.
+		Writes:  slices.Contains(strings.Fields(token.Scope), "write"),
+		Account: account,
 		SignIn:  signIn,
-		Refused: func(ctx context.Context, resp *chalet.Response) { h.refused(ctx, key, resp) },
 	}, h.version, h.logger)
 	if err != nil {
 		return nil, err
 	}
-	server.MCP.AddReceivingMiddleware(recovered(h.logger))
-
-	// mcpserver.New has built the same domains without an error.
-	domains, _ := cat.GatewayDomains()
-	writeTools := map[string]bool{}
-	for _, d := range domains {
-		if !d.AllReadOnly() {
-			writeTools[d.ToolName()] = true
-		}
-	}
-	return &grant{server: server, writes: writes, writeTools: writeTools, retire: token.ExpiresAt.Add(-retireEarly)}, nil
+	return &grant{server: server, retire: token.ExpiresAt.Add(-retireEarly)}, nil
 }
 
-// refused hears the app refuse one of the grant's calls. A 401 means the
-// delegated token died, most likely with its grant: it is dropped, so the
-// next request exchanges again, and a dead grant then gets the 401 challenge.
-// A 403 with insufficient_scope means the grant may only read: the request's
-// answer becomes the 403 that asks for write.
-func (h *hosted) refused(ctx context.Context, key [sha256.Size]byte, resp *chalet.Response) {
-	switch {
-	case resp.Status == http.StatusUnauthorized:
-		h.mu.Lock()
-		delete(h.grants, key)
-		h.mu.Unlock()
-	case resp.Status == http.StatusForbidden && strings.Contains(resp.Header.Get("WWW-Authenticate"), "insufficient_scope"):
-		if wanted, ok := ctx.Value(stepUpKey{}).(*atomic.Bool); ok {
-			wanted.Store(true)
-		}
-	}
+// drop forgets a grant whose delegated token the app refused.
+func (h *hosted) drop(key [sha256.Size]byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.grants, key)
 }
 
 type stepUpKey struct{}
-
-// recovered answers a call that panicked with an internal error, and logs the
-// panic and its stack, never the request and so never a token: one bad call
-// must not stop the server for everyone.
-func recovered(logger *slog.Logger) mcp.Middleware {
-	return func(next mcp.MethodHandler) mcp.MethodHandler {
-		return func(ctx context.Context, method string, req mcp.Request) (result mcp.Result, err error) {
-			defer func() {
-				if v := recover(); v != nil {
-					logger.Error("a call panicked", "method", method, "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
-					result, err = nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "internal error"}
-				}
-			}()
-			return next(ctx, method, req)
-		}
-	}
-}
 
 // refusedGrant is the app's no to a grant's first request, the identity,
 // right after a good exchange: the grant died in between (401, 404), the app
@@ -390,9 +338,41 @@ type refusedGrant struct{ *chalet.Response }
 
 func (e refusedGrant) Error() string { return "Chalet answered " + e.Response.Error() }
 
-// hostedAPI is the client as this server holds it: the person's files are not
-// here, so none goes up.
-type hostedAPI struct{ *chalet.Client }
+// hostedAPI is the client as this server holds it, and it sees every answer
+// of the app to the grant's calls. A 401 means the delegated token died, most
+// likely with its grant: the grant is dropped, so the next request exchanges
+// again, and a dead grant then gets the 401 challenge. A 403 with
+// insufficient_scope means the grant may only read: the request's answer
+// becomes the 403 that asks for write. The person's files are not here, so
+// none goes up.
+type hostedAPI struct {
+	*chalet.Client
+	drop func()
+}
+
+func (a hostedAPI) Do(ctx context.Context, method, path string, query url.Values, body map[string]any, header http.Header) (*chalet.Response, error) {
+	resp, err := a.Client.Do(ctx, method, path, query, body, header)
+	a.heard(ctx, resp)
+	return resp, err
+}
+
+func (a hostedAPI) Fetch(ctx context.Context, link string) (*chalet.Response, error) {
+	resp, err := a.Client.Fetch(ctx, link)
+	a.heard(ctx, resp)
+	return resp, err
+}
+
+func (a hostedAPI) heard(ctx context.Context, resp *chalet.Response) {
+	switch {
+	case resp == nil:
+	case resp.Status == http.StatusUnauthorized:
+		a.drop()
+	case resp.Status == http.StatusForbidden && strings.Contains(resp.Header.Get("WWW-Authenticate"), "insufficient_scope"):
+		if wanted, ok := ctx.Value(stepUpKey{}).(*atomic.Bool); ok {
+			wanted.Store(true)
+		}
+	}
+}
 
 func (hostedAPI) Upload(_ context.Context, path string) (string, error) {
 	return "", fmt.Errorf("this Chalet server is not on the computer with %s, so it cannot put it up: add the file in Chalet itself, or connect chalet on that computer", path)

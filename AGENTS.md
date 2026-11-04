@@ -47,14 +47,15 @@ the gate.
   the app's sentence: the grant survives the switch, and a 401 would make
   the client throw a good grant away. A 429 or a 5xx is the 503.
 - **A dead token is dropped.** A 401 from the app during a call drops the
-  grant from the cache, so the next request exchanges again, and a dead
-  grant then gets the 401. The call's own error says to reconnect the app,
-  never `chalet auth login` (`mcpserver.Config.SignIn`).
+  grant from the cache (`hostedAPI`, which sees every answer of the app to a
+  call), so the next request exchanges again, and a dead grant then gets the
+  401. The call's own error says to reconnect the app, never `chalet auth
+  login` (`mcpserver.Config.SignIn`).
 - **No write goes twice.** This server never repeats a request: not an
   exchange, not a call. chalet-cli's handler sends each call once, and its
   hint tells the agent to check before it calls again.
-- **One bad call does not stop the server.** Every grant's server turns a
-  panic into an internal error (`recovered`).
+- **One bad call does not stop the server.** chalet-cli's tool layer turns a
+  panic in a call into an internal error, on every grant's server.
 - **The cache** keeps one delegated token per grant, with the server built
   for its account and scope, until 10 seconds before the token expires; a
   burst for one grant exchanges once. The catalog is asked per grant, and a

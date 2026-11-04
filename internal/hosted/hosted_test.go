@@ -1,8 +1,6 @@
 package hosted
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -15,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basecamp/mcp/auth/exchange"
 	"github.com/basecamp/mcp/mcptest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -492,38 +489,5 @@ func TestTakesNoLocalFiles(t *testing.T) {
 		if r.Method == http.MethodPost {
 			t.Errorf("%s reached the app", r.URL.Path)
 		}
-	}
-}
-
-// A call that panics on a grant's server answers an internal error, and the
-// server answers the next one: one bad call does not stop it for everyone.
-func TestAPanicIsOneCallsInternalError(t *testing.T) {
-	app := &fakeApp{dead: map[string]bool{}}
-	chalet := httptest.NewServer(app)
-	t.Cleanup(chalet.Close)
-	exchanger, err := exchange.New(exchange.Config{TokenURL: chalet.URL + "/oauth/token", Auth: exchange.ClientSecretPost("chalet-mcp-server", "secret")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var log bytes.Buffer
-	h := &hosted{upstream: chalet.URL, exchanger: exchanger, version: "test", logger: slog.New(slog.NewTextHandler(&log, nil)), grants: map[[32]byte]*grant{}}
-
-	g, err := h.grant(t.Context(), person("read"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	mcp.AddTool(g.server.MCP, &mcp.Tool{Name: "boom"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
-		panic("boom")
-	})
-	session := mcptest.Connect(t, g.server.MCP)
-
-	if _, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "boom", Arguments: map[string]any{}}); err == nil || !strings.Contains(err.Error(), "internal error") {
-		t.Fatalf("the panicking call = %v", err)
-	}
-	if text, isError := mcptest.CallText(t, session, "chalet_my", map[string]any{"action": "work"}); isError || !strings.Contains(text, "Call Anna") {
-		t.Errorf("the next call = %q (error %v)", text, isError)
-	}
-	if !strings.Contains(log.String(), `msg="a call panicked" method=tools/call panic=boom`) {
-		t.Errorf("log = %s", log.String())
 	}
 }
