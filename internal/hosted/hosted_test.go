@@ -276,11 +276,11 @@ func keys(tools map[string]*mcp.Tool) string {
 	return strings.Join(names, ",")
 }
 
-// Clients sign in on a 401 alone: no token, a dead one, one not of Chalet's
-// shape, which costs no exchange, or a grant whose identity the app refuses
-// with a 401 or 404 right after the exchange. The app's own 403 leaves the
-// grant alone, and anything else that goes wrong asks for a retry, never a
-// sign-in.
+// Clients sign in on a 401 alone: no token, a dead one, one without the
+// prefix of Chalet's access tokens, which costs no exchange, or a grant whose
+// identity the app refuses with a 401 or 404 right after the exchange. The
+// app's own 403 leaves the grant alone, and anything else that goes wrong
+// asks for a retry, never a sign-in.
 func TestSignsInAtTheHTTPLevel(t *testing.T) {
 	challenge := `Bearer resource_metadata="` + metadataURL + `", scope="read"`
 	invalidToken := `Bearer error="invalid_token", resource_metadata="` + metadataURL + `", scope="read"`
@@ -293,8 +293,7 @@ func TestSignsInAtTheHTTPLevel(t *testing.T) {
 		{name: "no token", secret: "secret", status: 401, challenge: challenge},
 		{name: "a dead token", secret: "secret", token: person("revoked"), status: 401, challenge: invalidToken, exchanges: 1},
 		{name: "a personal access token", secret: "secret", token: "chalet_pat_" + padded("read"), status: 401, challenge: invalidToken},
-		{name: "a token too short", secret: "secret", token: "chalet_at_read", status: 401, challenge: invalidToken},
-		{name: "a token with a 0", secret: "secret", token: "chalet_at_" + strings.Repeat("0", 44), status: 401, challenge: invalidToken},
+		{name: "a delegated token", secret: "secret", token: delegated("read"), status: 401, challenge: invalidToken},
 		{name: "AI connections off", secret: "secret", token: person("switchedoff"), status: 403, body: "Chalet answered 403 AI connections are off for this account", exchanges: 1},
 		{name: "a grant that died after its exchange", secret: "secret", token: person("expired"), status: 401, challenge: invalidToken, exchanges: 1},
 		{name: "a person who left the account", secret: "secret", token: person("gone"), status: 401, challenge: invalidToken, exchanges: 1},

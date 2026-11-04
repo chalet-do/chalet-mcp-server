@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,10 +69,6 @@ const (
 // The most one request may take, the exchange included. A variable so that a
 // test can stand in a shorter one.
 var requestBudget = 45 * time.Second
-
-// accessToken is the shape of the token a person's app brings, as Chalet
-// mints it: the prefix and 44 base58 characters.
-var accessToken = regexp.MustCompile(`^chalet_at_[1-9A-HJ-NP-Za-km-z]{44}$`)
 
 // New is the server's HTTP handler: a POST to the resource's path is MCP,
 // stateless, answered in JSON; GET /up is the health check; and the
@@ -160,10 +155,10 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	case token == "":
 		h.challenge(w, http.StatusUnauthorized, "", "read")
 		return
-	case !accessToken.MatchString(token):
-		// Not of the shape of Chalet's access tokens: refused here, so that a
-		// made-up token never spends an exchange, whose budget at the app
-		// every person signed in here shares.
+	case !strings.HasPrefix(token, "chalet_at_"):
+		// Not one of Chalet's access tokens: refused here, without an
+		// exchange. The prefix alone, not the body's length, which is the
+		// app's to change; the app's own limits guard the exchange.
 		h.challenge(w, http.StatusUnauthorized, "invalid_token", "read")
 		return
 	}

@@ -32,10 +32,11 @@ the gate.
   the call runs. A write that the app itself refuses, which only a token
   cached from before a narrowing refresh can meet, gets the tool's
   `forbidden` error.
-- **Only a token of Chalet's shape costs an exchange**: `chalet_at_` and 44
-  base58 characters (`accessToken`). Every exchange spends this server's one
-  budget at the app, which every person signed in here shares, so any other
-  bearer gets the 401 at once, and a made-up token starves no one.
+- **Only a token with the access tokens' prefix goes to the exchange**
+  (`chalet_at_`); any other bearer gets the 401 at once. The prefix alone:
+  the body's length is the app's to change, and a copy of it here would turn
+  every grant away. The app's own limits keep made-up tokens from starving
+  real people.
 - **The exchange forks into terminal or retry** (the toolkit's
   `auth/exchange`). Only `invalid_grant` is terminal: the person's token is
   dead, and the 401 makes the client sign in again. Every other failure —
