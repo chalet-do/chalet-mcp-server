@@ -10,6 +10,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,6 +51,12 @@ type Config struct {
 // The client this server is at the app's token endpoint: the app makes no
 // other for the exchange.
 const clientID = "chalet-mcp-server"
+
+// Chalet's own icon, the app's favicon.ico, for a client or a search engine
+// that looks for one on this host to show beside the connector.
+//
+//go:embed favicon.ico
+var favicon []byte
 
 // ErrNoSecret is New's refusal of a Config without a client secret: the
 // server could sign no one in, and that is its fault, never the person's.
@@ -120,6 +127,11 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 		ResourceName:           "Chalet",
 	}))
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(favicon)
+	})
 	return h.logged(mux), nil
 }
 

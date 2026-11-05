@@ -340,6 +340,9 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if up := answer("GET", "/up"); up.Code != 200 {
 		t.Errorf("/up = %d", up.Code)
 	}
+	if icon := answer("GET", "/favicon.ico"); icon.Code != 200 || icon.Header().Get("Content-Type") != "image/x-icon" || !bytes.Equal(icon.Body.Bytes(), favicon) || len(favicon) == 0 {
+		t.Errorf("/favicon.ico = %d %s, %d bytes", icon.Code, icon.Header().Get("Content-Type"), icon.Body.Len())
+	}
 	for _, method := range []string{"GET", "DELETE"} {
 		if rec := answer(method, "/mcp"); rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s /mcp = %d", method, rec.Code)
