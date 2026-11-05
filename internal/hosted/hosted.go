@@ -118,14 +118,17 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 
 	mux := http.NewServeMux()
 	// Only POST: the mux answers GET and DELETE with 405.
-	mux.Handle("POST "+resource.Path, http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime))
-	mux.Handle(metadataPath, auth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
-		Resource:               cfg.Resource,
-		AuthorizationServers:   []string{h.upstream},
-		ScopesSupported:        []string{"read", "write"},
-		BearerMethodsSupported: []string{"header"},
-		ResourceName:           "Chalet",
-	}))
+	serve := http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime)
+	mux.Handle("POST "+resource.Path, serve)
+	mux.Handle(metadataPath, h.metadata(cfg.Resource))
+	// A person in several accounts may name one in the path, /mcp/2: a label
+	// for the clients that keep one connector per URL with the query dropped.
+	// Like the query, the server ignores it and the grant decides the account;
+	// each label is a resource of its own, with its own metadata.
+	mux.Handle("POST "+resource.Path+"/{account}", accountLabel(serve))
+	mux.Handle(metadataPath+"/{account}", accountLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.metadata(cfg.Resource+"/"+r.PathValue("account")).ServeHTTP(w, r)
+	})))
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/x-icon")
@@ -171,13 +174,13 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	token := bearerToken(r)
 	switch {
 	case token == "":
-		h.challenge(w, http.StatusUnauthorized, "", "read")
+		h.challenge(w, r, http.StatusUnauthorized, "", "read")
 		return
 	case !strings.HasPrefix(token, "chalet_at_"):
 		// Not one of Chalet's access tokens: refused here, without an
 		// exchange. The prefix alone, not the body's length, which is the
 		// app's to change; the app's own limits guard the exchange.
-		h.challenge(w, http.StatusUnauthorized, "invalid_token", "read")
+		h.challenge(w, r, http.StatusUnauthorized, "invalid_token", "read")
 		return
 	}
 	g, err := h.grant(r.Context(), token)
@@ -192,7 +195,7 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 		// identity or the catalog right after a good exchange (revoked,
 		// lapsed, or the person left the account). Nothing of it is kept, and
 		// the client signs in again.
-		h.challenge(w, http.StatusUnauthorized, "invalid_token", "read")
+		h.challenge(w, r, http.StatusUnauthorized, "invalid_token", "read")
 		return
 	case refused == http.StatusForbidden:
 		// The app's own ruling, such as AI connections being off: the grant
@@ -212,14 +215,43 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	if slices.Contains(g.server.HeldBack, calledTool(body)) {
-		h.challenge(w, http.StatusForbidden, "insufficient_scope", "write")
+		h.challenge(w, r, http.StatusForbidden, "insufficient_scope", "write")
 		return
 	}
 	h.mcp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), grantKey{}, g)))
 }
 
-func (h *hosted) challenge(w http.ResponseWriter, status int, code, scope string) {
-	params := fmt.Sprintf("resource_metadata=%q, scope=%q", h.metadataURL, scope)
+// The protected resource metadata (RFC 9728) of the resource at that URL.
+func (h *hosted) metadata(resource string) http.Handler {
+	return auth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
+		Resource:               resource,
+		AuthorizationServers:   []string{h.upstream},
+		ScopesSupported:        []string{"read", "write"},
+		BearerMethodsSupported: []string{"header"},
+		ResourceName:           "Chalet",
+	})
+}
+
+// accountLabel serves a path's account label only when it is an account's
+// number; anything else is not found.
+func accountLabel(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if label := r.PathValue("account"); label == "" || strings.Trim(label, "0123456789") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// The challenge names the metadata of the resource the request came to: the
+// account label's, when the path has one.
+func (h *hosted) challenge(w http.ResponseWriter, r *http.Request, status int, code, scope string) {
+	metadataURL := h.metadataURL
+	if label := r.PathValue("account"); label != "" {
+		metadataURL += "/" + label
+	}
+	params := fmt.Sprintf("resource_metadata=%q, scope=%q", metadataURL, scope)
 	if code != "" {
 		params = fmt.Sprintf("error=%q, ", code) + params
 	}

@@ -337,6 +337,18 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if want := `{"resource":"https://mcp.chalet.do/mcp","authorization_servers":["https://chalet.do"],"scopes_supported":["read","write"],"bearer_methods_supported":["header"],"resource_name":"Chalet"}`; metadata.Code != 200 || strings.TrimSpace(metadata.Body.String()) != want {
 		t.Errorf("metadata = %d %s", metadata.Code, metadata.Body)
 	}
+	labelled := answer("GET", "/.well-known/oauth-protected-resource/mcp/2")
+	if want := `{"resource":"https://mcp.chalet.do/mcp/2","authorization_servers":["https://chalet.do"],"scopes_supported":["read","write"],"bearer_methods_supported":["header"],"resource_name":"Chalet"}`; labelled.Code != 200 || strings.TrimSpace(labelled.Body.String()) != want {
+		t.Errorf("a label's metadata = %d %s", labelled.Code, labelled.Body)
+	}
+	if challenge := answer("POST", "/mcp/2"); challenge.Code != 401 || challenge.Header().Get("WWW-Authenticate") != `Bearer resource_metadata="https://mcp.chalet.do/.well-known/oauth-protected-resource/mcp/2", scope="read"` {
+		t.Errorf("a label's challenge = %d %q", challenge.Code, challenge.Header().Get("WWW-Authenticate"))
+	}
+	for _, path := range []string{"/mcp/two", "/mcp/2/3", "/.well-known/oauth-protected-resource/mcp/two"} {
+		if rec := answer("POST", path); rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s = %d", path, rec.Code)
+		}
+	}
 	if up := answer("GET", "/up"); up.Code != 200 {
 		t.Errorf("/up = %d", up.Code)
 	}
@@ -351,7 +363,8 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 }
 
 // The grant decides: its scope the tools, its one account the requests, and
-// the delegated token is all the app sees. A query string changes nothing.
+// the delegated token is all the app sees. A query string changes nothing,
+// and nor does an account label in the path.
 func TestServesWhatTheGrantAllows(t *testing.T) {
 	app := &fakeApp{}
 	url := serve(t, "secret", app)
@@ -368,6 +381,9 @@ func TestServesWhatTheGrantAllows(t *testing.T) {
 	write := connectAs(t, url+"/mcp?account=2", person("write"))
 	if got := keys(mcptest.ListTools(t, write)); got != "chalet_destructive,chalet_my,chalet_picture,chalet_todos_write" {
 		t.Fatalf("a write grant lists %v", got)
+	}
+	if got := keys(mcptest.ListTools(t, connectAs(t, url+"/mcp/2", person("write")))); got != "chalet_destructive,chalet_my,chalet_picture,chalet_todos_write" {
+		t.Fatalf("a write grant through a label lists %v", got)
 	}
 	if text, isError := mcptest.CallText(t, write, "chalet_todos_write", map[string]any{"action": "complete", "params": map[string]any{"todo_id": "todo-1"}}); isError || !strings.Contains(text, "204") {
 		t.Fatalf("complete = %q (error %v)", text, isError)
