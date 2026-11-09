@@ -344,7 +344,15 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if challenge := answer("POST", "/mcp/2"); challenge.Code != 401 || challenge.Header().Get("WWW-Authenticate") != `Bearer resource_metadata="https://mcp.chalet.do/.well-known/oauth-protected-resource/mcp/2", scope="read"` {
 		t.Errorf("a label's challenge = %d %q", challenge.Code, challenge.Header().Get("WWW-Authenticate"))
 	}
-	for _, path := range []string{"/mcp/two", "/mcp/2/3", "/.well-known/oauth-protected-resource/mcp/two"} {
+	const agent = "agent-01a1bfa4-821a-7b14-9282-700833940023"
+	agentMetadata := answer("GET", "/.well-known/oauth-protected-resource/mcp/"+agent)
+	if agentMetadata.Code != 200 || !strings.Contains(agentMetadata.Body.String(), `"resource":"https://mcp.chalet.do/mcp/`+agent+`"`) {
+		t.Errorf("an agent's metadata = %d %s", agentMetadata.Code, agentMetadata.Body)
+	}
+	if challenge := answer("POST", "/mcp/"+agent); challenge.Code != 401 || challenge.Header().Get("WWW-Authenticate") != `Bearer resource_metadata="https://mcp.chalet.do/.well-known/oauth-protected-resource/mcp/`+agent+`", scope="read"` {
+		t.Errorf("an agent's challenge = %d %q", challenge.Code, challenge.Header().Get("WWW-Authenticate"))
+	}
+	for _, path := range []string{"/mcp/two", "/mcp/2/3", "/mcp/agent-two", "/mcp/agent-01A1BFA4-821A-7B14-9282-700833940023", "/.well-known/oauth-protected-resource/mcp/two"} {
 		if rec := answer("POST", path); rec.Code != http.StatusNotFound {
 			t.Errorf("POST %s = %d", path, rec.Code)
 		}
@@ -382,8 +390,10 @@ func TestServesWhatTheGrantAllows(t *testing.T) {
 	if got := keys(mcptest.ListTools(t, write)); got != "chalet_destructive,chalet_my,chalet_picture,chalet_todos_write" {
 		t.Fatalf("a write grant lists %v", got)
 	}
-	if got := keys(mcptest.ListTools(t, connectAs(t, url+"/mcp/2", person("write")))); got != "chalet_destructive,chalet_my,chalet_picture,chalet_todos_write" {
-		t.Fatalf("a write grant through a label lists %v", got)
+	for _, label := range []string{"2", "agent-01a1bfa4-821a-7b14-9282-700833940023"} {
+		if got := keys(mcptest.ListTools(t, connectAs(t, url+"/mcp/"+label, person("write")))); got != "chalet_destructive,chalet_my,chalet_picture,chalet_todos_write" {
+			t.Fatalf("a write grant through the label %s lists %v", label, got)
+		}
 	}
 	if text, isError := mcptest.CallText(t, write, "chalet_todos_write", map[string]any{"action": "complete", "params": map[string]any{"todo_id": "todo-1"}}); isError || !strings.Contains(text, "204") {
 		t.Fatalf("complete = %q (error %v)", text, isError)
@@ -404,8 +414,8 @@ func TestServesWhatTheGrantAllows(t *testing.T) {
 		t.Errorf("instructions = %q", instructions)
 	}
 
-	// No browser on a server: the link is the owner's to follow.
-	if text, isError := mcptest.CallText(t, write, "chalet_destructive", map[string]any{"action": "trash", "params": map[string]any{"recording_id": "todo-1"}}); isError || !strings.Contains(text, "Not done yet: Trash “Call Anna” in Website? Give the owner the confirm page: "+confirmURL) {
+	// No browser on a server: the link is the person's to follow.
+	if text, isError := mcptest.CallText(t, write, "chalet_destructive", map[string]any{"action": "trash", "params": map[string]any{"recording_id": "todo-1"}}); isError || !strings.Contains(text, "Not done yet: Trash “Call Anna” in Website? Give the person you act for the confirm page: "+confirmURL) {
 		t.Errorf("trash = %q (error %v)", text, isError)
 	}
 }
