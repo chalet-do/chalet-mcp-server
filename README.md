@@ -19,6 +19,10 @@ mail and the CRM.
 To stop, disconnect the app in Settings › Connected apps. It stops working at
 once.
 
+An agent member of your account has its own link, on its page in
+Settings › AI agents. An assistant that connects through it works as that
+agent instead of as you.
+
 ## What your assistant can do
 
 The same as [`chalet mcp`](https://github.com/chalet-do/chalet-cli) does on

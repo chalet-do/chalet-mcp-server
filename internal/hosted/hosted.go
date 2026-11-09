@@ -68,7 +68,7 @@ const (
 	retireEarly = 10 * time.Second
 	// How a person signs in again here: in the app, never with chalet auth
 	// login, which is the command line's.
-	signIn = "The connection to Chalet has ended or was revoked: the owner reconnects this app to Chalet and signs in again."
+	signIn = "The connection to Chalet has ended or was revoked: the person you act for reconnects this app to Chalet and signs in again."
 	// The answer to a request that ran out of time. A write may have gone
 	// through by then, so it says what chalet-cli's own hint for a write says.
 	outOfTime = "Chalet did not answer in time, and a change may have been made: check whether it was done before you call again."
