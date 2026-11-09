@@ -352,7 +352,7 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if challenge := answer("POST", "/mcp/"+agent); challenge.Code != 401 || challenge.Header().Get("WWW-Authenticate") != `Bearer resource_metadata="https://mcp.chalet.do/.well-known/oauth-protected-resource/mcp/`+agent+`", scope="read"` {
 		t.Errorf("an agent's challenge = %d %q", challenge.Code, challenge.Header().Get("WWW-Authenticate"))
 	}
-	for _, path := range []string{"/mcp/two", "/mcp/2/3", "/mcp/agent-two", "/mcp/agent-01A1BFA4-821A-7B14-9282-700833940023", "/.well-known/oauth-protected-resource/mcp/two"} {
+	for _, path := range []string{"/mcp/TWO", "/mcp/a%22b", "/mcp/2/3", "/mcp/agent-01A1BFA4-821A-7B14-9282-700833940023", "/mcp/" + strings.Repeat("a", 65), "/.well-known/oauth-protected-resource/mcp/TWO"} {
 		if rec := answer("POST", path); rec.Code != http.StatusNotFound {
 			t.Errorf("POST %s = %d", path, rec.Code)
 		}

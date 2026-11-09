@@ -19,7 +19,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -234,14 +233,11 @@ func (h *hosted) metadata(resource string) http.Handler {
 	})
 }
 
-// What a path may name: an account's number, or an agent's id.
-var pathLabel = regexp.MustCompile(`^(\d+|agent-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$`)
-
-// withLabel serves a path's label only when it is one of those; anything else
-// is not found.
+// withLabel serves a path's label only when it could be one; what a label may
+// name is the app's to rule, at consent.
 func withLabel(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !pathLabel.MatchString(r.PathValue("label")) {
+		if label := r.PathValue("label"); len(label) > 64 || strings.Trim(label, "0123456789abcdefghijklmnopqrstuvwxyz-") != "" {
 			http.NotFound(w, r)
 			return
 		}
