@@ -123,11 +123,12 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	mux.Handle(metadataPath, h.metadata(cfg.Resource))
 	// A person in several accounts may name one in the path, /mcp/2: a label
 	// for the clients that keep one connector per URL with the query dropped.
-	// Like the query, the server ignores it and the grant decides the account;
-	// each label is a resource of its own, with its own metadata.
-	mux.Handle("POST "+resource.Path+"/{account}", accountLabel(serve))
-	mux.Handle(metadataPath+"/{account}", accountLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.metadata(cfg.Resource+"/"+r.PathValue("account")).ServeHTTP(w, r)
+	// An agent's own link names the agent, /mcp/agent-<id>, and consent signs
+	// the app in as it. Like the query, the server ignores both and the grant
+	// decides; each label is a resource of its own, with its own metadata.
+	mux.Handle("POST "+resource.Path+"/{label}", withLabel(serve))
+	mux.Handle(metadataPath+"/{label}", withLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.metadata(cfg.Resource+"/"+r.PathValue("label")).ServeHTTP(w, r)
 	})))
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
@@ -232,11 +233,11 @@ func (h *hosted) metadata(resource string) http.Handler {
 	})
 }
 
-// accountLabel serves a path's account label only when it is an account's
-// number; anything else is not found.
-func accountLabel(next http.Handler) http.Handler {
+// withLabel serves a path's label only when it could be one; what a label may
+// name is the app's to rule, at consent.
+func withLabel(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if label := r.PathValue("account"); label == "" || strings.Trim(label, "0123456789") != "" {
+		if label := r.PathValue("label"); len(label) > 64 || strings.Trim(label, "0123456789abcdefghijklmnopqrstuvwxyz-") != "" {
 			http.NotFound(w, r)
 			return
 		}
@@ -245,10 +246,10 @@ func accountLabel(next http.Handler) http.Handler {
 }
 
 // The challenge names the metadata of the resource the request came to: the
-// account label's, when the path has one.
+// label's, when the path has one.
 func (h *hosted) challenge(w http.ResponseWriter, r *http.Request, status int, code, scope string) {
 	metadataURL := h.metadataURL
-	if label := r.PathValue("account"); label != "" {
+	if label := r.PathValue("label"); label != "" {
 		metadataURL += "/" + label
 	}
 	params := fmt.Sprintf("resource_metadata=%q, scope=%q", metadataURL, scope)
