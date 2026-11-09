@@ -56,6 +56,11 @@ the gate.
   call), so the next request exchanges again, and a dead grant then gets the
   401. The call's own error says to reconnect the app, never `chalet auth
   login` (`mcpserver.Config.SignIn`).
+- **A label in the path is the app's to rule.** `/mcp/<number>` names an
+  account and `/mcp/agent-<id>` an agent, each a resource with its own
+  metadata. The server keeps out what could not be a label (`withLabel`) and
+  ignores the rest: consent decides what a label names, and the grant what
+  it reaches, so an app signed in through an agent's link acts as the agent.
 - **No write goes twice.** This server never repeats a request: not an
   exchange, not a call. chalet-cli's handler sends each call once, and its
   hint tells the agent to check before it calls again.
