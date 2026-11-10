@@ -215,7 +215,11 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
-	if slices.Contains(g.server.HeldBack, calledTool(body)) {
+	method, tool := called(body)
+	// What was asked, beside the request's own line: a request that runs out
+	// of time says no more than its path there.
+	h.logger.Info("call", "rpc", method, "tool", tool)
+	if slices.Contains(g.server.HeldBack, tool) {
 		h.challenge(w, r, http.StatusForbidden, "insufficient_scope", "write")
 		return
 	}
@@ -347,7 +351,40 @@ func (h *hosted) build(ctx context.Context, key [sha256.Size]byte, subject strin
 	if err != nil {
 		return nil, err
 	}
+	server.MCP.AddReceivingMiddleware(settled)
 	return &grant{server: server, retire: token.ExpiresAt.Add(-retireEarly)}, nil
+}
+
+// settled says that a grant's tools never change: its server is built once,
+// from the catalog, and a new one replaces it. The SDK offers a notice of a
+// change by default, and holds a client that listens for one (SEP-2575's
+// subscriptions/listen) until the request's time runs out, which a client
+// reads as a server that does not answer. With nothing to wait for, the
+// listener gets its acknowledgement and its answer at once.
+func settled(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if listen, ok := req.GetParams().(*mcp.SubscriptionsListenParams); ok && listen != nil && listen.Notifications != nil {
+			listen.Notifications.ToolsListChanged = false
+		}
+		result, err := next(ctx, method, req)
+		switch r := result.(type) {
+		case *mcp.InitializeResult:
+			if r != nil {
+				unchanging(r.Capabilities)
+			}
+		case *mcp.DiscoverResult:
+			if r != nil {
+				unchanging(r.Capabilities)
+			}
+		}
+		return result, err
+	}
+}
+
+func unchanging(caps *mcp.ServerCapabilities) {
+	if caps != nil && caps.Tools != nil {
+		caps.Tools.ListChanged = false
+	}
 }
 
 // loadCatalog asks for the catalog with the grant's token and parses it only
@@ -432,8 +469,8 @@ func (hostedAPI) Upload(_ context.Context, path string) (string, error) {
 	return "", fmt.Errorf("this Chalet server is not on the computer with %s, so it cannot put it up: add the file in Chalet itself, or connect chalet on that computer", path)
 }
 
-// calledTool is the tool a JSON-RPC request calls, or "".
-func calledTool(body []byte) string {
+// called is the method of a JSON-RPC request, and the tool it calls or "".
+func called(body []byte) (method, tool string) {
 	var call struct {
 		Method string `json:"method"`
 		Params struct {
@@ -441,9 +478,9 @@ func calledTool(body []byte) string {
 		} `json:"params"`
 	}
 	if json.Unmarshal(body, &call) != nil || call.Method != "tools/call" {
-		return ""
+		return call.Method, ""
 	}
-	return call.Params.Name
+	return call.Method, call.Params.Name
 }
 
 func bearerToken(r *http.Request) string {

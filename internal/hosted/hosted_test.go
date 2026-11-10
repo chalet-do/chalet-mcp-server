@@ -588,3 +588,22 @@ func TestTheTokenNeverReachesTheLog(t *testing.T) {
 		}
 	}
 }
+
+// A grant's tools never change, so the server offers no notice of a change,
+// and a client that listens for one is answered at once: held open, the
+// request ran out of time, and the client took the server for dead.
+func TestAListenerIsAnsweredAtOnce(t *testing.T) {
+	budget := requestBudget
+	requestBudget = 2 * time.Second
+	t.Cleanup(func() { requestBudget = budget })
+	url := serve(t, "secret", &fakeApp{})
+
+	if _, body := post(t, url+"/mcp", person("read"), initialize); !strings.Contains(body, `"tools":{}`) {
+		t.Fatalf("the handshake offers %s", body)
+	}
+	listen := `{"jsonrpc":"2.0","id":2,"method":"subscriptions/listen","params":{"notifications":{"toolsListChanged":true}}}`
+	resp, body := post(t, url+"/mcp", person("read"), listen)
+	if resp.StatusCode != 200 || !strings.Contains(body, "notifications/subscriptions/acknowledged") || !strings.Contains(body, `"id":2`) {
+		t.Fatalf("the listener = %d %q", resp.StatusCode, body)
+	}
+}
