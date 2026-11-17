@@ -366,19 +366,30 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if rec := answer("DELETE", "/mcp"); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("DELETE /mcp = %d", rec.Code)
 	}
-	// A browser goes to the page about connecting; a client asking for an
-	// event stream is told this server holds none.
-	for _, path := range []string{"/mcp", "/mcp/2"} {
-		if rec := answer("GET", path); rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://chalet.do/ai" {
-			t.Errorf("a browser's GET %s = %d %q", path, rec.Code, rec.Header().Get("Location"))
+	// A browser, which asks for HTML, goes to the page about connecting; any
+	// other GET, a client probing for an event stream above all, is told this
+	// server holds none. Both say the answer depends on Accept.
+	get := func(path string, accept ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", path, nil)
+		for _, value := range accept {
+			req.Header.Add("Accept", value)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, path := range []string{"/mcp", "/mcp/2", "/mcp/" + agent} {
+		if rec := get(path, "Text/HTML,application/xhtml+xml"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://chalet.do/ai" || rec.Header().Get("Vary") != "Accept" {
+			t.Errorf("a browser's GET %s = %d %q, Vary %q", path, rec.Code, rec.Header().Get("Location"), rec.Header().Get("Vary"))
+		}
+		for _, accept := range [][]string{{"text/event-stream"}, {"application/json", "text/event-stream"}, {"*/*"}, nil} {
+			if rec := get(path, accept...); rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" || rec.Header().Get("Vary") != "Accept" {
+				t.Errorf("GET %s with Accept %q = %d, Allow %q, Vary %q", path, accept, rec.Code, rec.Header().Get("Allow"), rec.Header().Get("Vary"))
+			}
 		}
 	}
-	stream := httptest.NewRequest("GET", "/mcp", nil)
-	stream.Header.Set("Accept", "text/event-stream")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, stream)
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
-		t.Errorf("a stream's GET /mcp = %d, Allow %q", rec.Code, rec.Header().Get("Allow"))
+	if rec := get("/mcp/TWO", "text/html"); rec.Code != http.StatusNotFound {
+		t.Errorf("a browser's GET on a bad label = %d", rec.Code)
 	}
 	if rec := answer("GET", "/.well-known/openai-apps-challenge"); rec.Code != http.StatusNotFound {
 		t.Errorf("the challenge with none set = %d", rec.Code)
@@ -387,7 +398,7 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 
 // ChatGPT's plugin directory proves the domain by a token this host shows.
 func TestShowsTheOpenAIChallenge(t *testing.T) {
-	handler, err := New(Config{Upstream: "https://chalet.do", Resource: "https://mcp.chalet.do/mcp", ClientSecret: "secret", OpenAIChallenge: "token-123"}, "test", slog.New(slog.DiscardHandler))
+	handler, err := New(Config{Upstream: "https://chalet.do", Resource: "https://mcp.chalet.do/mcp", ClientSecret: "secret", OpenAIChallenge: " token-123\n"}, "test", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

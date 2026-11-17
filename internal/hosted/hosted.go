@@ -94,7 +94,7 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 		return nil, fmt.Errorf("resource: %w", err)
 	}
 	resource, _ := url.Parse(cfg.Resource)
-	if resource.Path == "" {
+	if resource.Path == "" || resource.Path == "/" {
 		return nil, fmt.Errorf("resource %s: needs a path, like https://mcp.chalet.do/mcp", cfg.Resource)
 	}
 	if cfg.ClientSecret == "" {
@@ -121,11 +121,12 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true, Logger: logger})
 
 	mux := http.NewServeMux()
-	// Only POST is MCP: the mux answers DELETE with 405, and so does a GET that
-	// asks for an event stream (browserGet).
+	// Only POST is MCP: the mux answers DELETE with 405, and so does any GET
+	// but a browser's (browserGet).
 	serve := http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime)
+	browse := h.browserGet()
 	mux.Handle("POST "+resource.Path, serve)
-	mux.Handle("GET "+resource.Path, h.browserGet())
+	mux.Handle("GET "+resource.Path, browse)
 	mux.Handle(metadataPath, h.metadata(cfg.Resource))
 	// A person in several accounts may name one in the path, /mcp/2: a label
 	// for the clients that keep one connector per URL with the query dropped.
@@ -133,14 +134,14 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	// the app in as it. Like the query, the server ignores both and the grant
 	// decides; each label is a resource of its own, with its own metadata.
 	mux.Handle("POST "+resource.Path+"/{label}", withLabel(serve))
-	mux.Handle("GET "+resource.Path+"/{label}", withLabel(h.browserGet()))
+	mux.Handle("GET "+resource.Path+"/{label}", withLabel(browse))
 	mux.Handle(metadataPath+"/{label}", withLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.metadata(cfg.Resource+"/"+r.PathValue("label")).ServeHTTP(w, r)
 	})))
 	if cfg.OpenAIChallenge != "" {
 		mux.HandleFunc("GET /.well-known/openai-apps-challenge", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			io.WriteString(w, cfg.OpenAIChallenge)
+			io.WriteString(w, strings.TrimSpace(cfg.OpenAIChallenge))
 		})
 	}
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
@@ -182,17 +183,19 @@ type grant struct {
 type grantKey struct{}
 
 // browserGet answers a GET on the resource: a person who opened the link in a
-// browser goes to the app's page about connecting an AI app, and a client
-// that asks for an event stream keeps its 405, since this server holds none
-// open.
+// browser, which asks for HTML, goes to the app's page about connecting an
+// app. Any other GET, an MCP client probing for an event stream above all,
+// keeps its 405, since this server holds no stream open. The answer depends
+// on Accept, so it says so to any cache.
 func (h *hosted) browserGet() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		w.Header().Add("Vary", "Accept")
+		if strings.Contains(strings.ToLower(strings.Join(r.Header.Values("Accept"), ",")), "text/html") {
+			http.Redirect(w, r, h.upstream+"/ai", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, h.upstream+"/ai", http.StatusFound)
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 	})
 }
 
