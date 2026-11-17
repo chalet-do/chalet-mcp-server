@@ -327,9 +327,13 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer := func(method, path string) *httptest.ResponseRecorder {
+	answer := func(method, path string, accept ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, nil)
+		for _, value := range accept {
+			req.Header.Add("Accept", value)
+		}
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		handler.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -369,26 +373,20 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	// A browser, which asks for HTML, goes to the page about connecting; any
 	// other GET, a client probing for an event stream above all, is told this
 	// server holds none. Both say the answer depends on Accept.
-	get := func(path string, accept ...string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest("GET", path, nil)
-		for _, value := range accept {
-			req.Header.Add("Accept", value)
-		}
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		return rec
-	}
 	for _, path := range []string{"/mcp", "/mcp/2", "/mcp/" + agent} {
-		if rec := get(path, "Text/HTML,application/xhtml+xml"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://chalet.do/ai" || rec.Header().Get("Vary") != "Accept" {
+		if rec := answer("GET", path, "Text/HTML,application/xhtml+xml"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://chalet.do/ai" || rec.Header().Get("Vary") != "Accept" {
 			t.Errorf("a browser's GET %s = %d %q, Vary %q", path, rec.Code, rec.Header().Get("Location"), rec.Header().Get("Vary"))
 		}
-		for _, accept := range [][]string{{"text/event-stream"}, {"application/json", "text/event-stream"}, {"*/*"}, nil} {
-			if rec := get(path, accept...); rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" || rec.Header().Get("Vary") != "Accept" {
-				t.Errorf("GET %s with Accept %q = %d, Allow %q, Vary %q", path, accept, rec.Code, rec.Header().Get("Allow"), rec.Header().Get("Vary"))
-			}
+		if rec := answer("GET", path, "text/event-stream"); rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+			t.Errorf("a stream's GET %s = %d, Allow %q", path, rec.Code, rec.Header().Get("Allow"))
 		}
 	}
-	if rec := get("/mcp/TWO", "text/html"); rec.Code != http.StatusNotFound {
+	for _, accept := range [][]string{{"application/json", "text/event-stream"}, {"*/*"}, nil} {
+		if rec := answer("GET", "/mcp", accept...); rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Vary") != "Accept" {
+			t.Errorf("GET /mcp with Accept %q = %d, Vary %q", accept, rec.Code, rec.Header().Get("Vary"))
+		}
+	}
+	if rec := answer("GET", "/mcp/TWO", "text/html"); rec.Code != http.StatusNotFound {
 		t.Errorf("a browser's GET on a bad label = %d", rec.Code)
 	}
 	if rec := answer("GET", "/.well-known/openai-apps-challenge"); rec.Code != http.StatusNotFound {

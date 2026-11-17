@@ -124,7 +124,7 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	// Only POST is MCP: the mux answers DELETE with 405, and so does any GET
 	// but a browser's (browserGet).
 	serve := http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime)
-	browse := h.browserGet()
+	browse := http.HandlerFunc(h.browserGet)
 	mux.Handle("POST "+resource.Path, serve)
 	mux.Handle("GET "+resource.Path, browse)
 	mux.Handle(metadataPath, h.metadata(cfg.Resource))
@@ -138,10 +138,10 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	mux.Handle(metadataPath+"/{label}", withLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.metadata(cfg.Resource+"/"+r.PathValue("label")).ServeHTTP(w, r)
 	})))
-	if cfg.OpenAIChallenge != "" {
+	if token := strings.TrimSpace(cfg.OpenAIChallenge); token != "" {
 		mux.HandleFunc("GET /.well-known/openai-apps-challenge", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			io.WriteString(w, strings.TrimSpace(cfg.OpenAIChallenge))
+			io.WriteString(w, token)
 		})
 	}
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
@@ -187,16 +187,14 @@ type grantKey struct{}
 // app. Any other GET, an MCP client probing for an event stream above all,
 // keeps its 405, since this server holds no stream open. The answer depends
 // on Accept, so it says so to any cache.
-func (h *hosted) browserGet() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Vary", "Accept")
-		if strings.Contains(strings.ToLower(strings.Join(r.Header.Values("Accept"), ",")), "text/html") {
-			http.Redirect(w, r, h.upstream+"/ai", http.StatusFound)
-			return
-		}
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-	})
+func (h *hosted) browserGet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Vary", "Accept")
+	if strings.Contains(strings.ToLower(strings.Join(r.Header.Values("Accept"), ",")), "text/html") {
+		http.Redirect(w, r, h.upstream+"/ai", http.StatusFound)
+		return
+	}
+	w.Header().Set("Allow", http.MethodPost)
+	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 }
 
 // serveMCP signs the request in, then lets the MCP handler answer it. Every

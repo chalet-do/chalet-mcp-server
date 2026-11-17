@@ -33,11 +33,9 @@ func main() {
 
 func run(logger *slog.Logger) error {
 	cfg := hosted.Config{
-		Upstream:     cmp.Or(os.Getenv("CHALET_URL"), "https://chalet.do"),
-		Resource:     cmp.Or(os.Getenv("CHALET_MCP_RESOURCE"), "https://mcp.chalet.do/mcp"),
-		ClientSecret: os.Getenv("CHALET_MCP_CLIENT_SECRET"),
-		// Shown at /.well-known/openai-apps-challenge while a ChatGPT
-		// directory submission verifies the domain.
+		Upstream:        cmp.Or(os.Getenv("CHALET_URL"), "https://chalet.do"),
+		Resource:        cmp.Or(os.Getenv("CHALET_MCP_RESOURCE"), "https://mcp.chalet.do/mcp"),
+		ClientSecret:    os.Getenv("CHALET_MCP_CLIENT_SECRET"),
 		OpenAIChallenge: os.Getenv("CHALET_OPENAI_APPS_CHALLENGE"),
 	}
 	// Without its credential the server does not start, so that the deploy's
