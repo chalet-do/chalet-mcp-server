@@ -46,6 +46,9 @@ type Config struct {
 	// ClientSecret is this server's own credential for the exchange, as the
 	// client chalet-mcp-server. New refuses a Config without it (ErrNoSecret).
 	ClientSecret string
+	// OpenAIChallenge is the token ChatGPT's plugin directory asks this host
+	// to show, to prove the domain is Chalet's. Empty, the path is a 404.
+	OpenAIChallenge string
 }
 
 // The client this server is at the app's token endpoint: the app makes no
@@ -79,9 +82,10 @@ const (
 var requestBudget = 45 * time.Second
 
 // New is the server's HTTP handler: a POST to the resource's path is MCP,
-// stateless, answered in JSON; GET /up is the health check; and the
-// resource's metadata (RFC 9728) says where a client signs in. Any query
-// string is ignored: the grant decides the account.
+// stateless, answered in JSON; a browser's GET there goes to the app's page
+// about connecting; GET /up is the health check; and the resource's metadata
+// (RFC 9728) says where a client signs in. Any query string is ignored: the
+// grant decides the account.
 func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) {
 	if err := chalet.CheckBaseURL(cfg.Upstream); err != nil {
 		return nil, fmt.Errorf("upstream: %w", err)
@@ -90,7 +94,7 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 		return nil, fmt.Errorf("resource: %w", err)
 	}
 	resource, _ := url.Parse(cfg.Resource)
-	if resource.Path == "" {
+	if resource.Path == "" || resource.Path == "/" {
 		return nil, fmt.Errorf("resource %s: needs a path, like https://mcp.chalet.do/mcp", cfg.Resource)
 	}
 	if cfg.ClientSecret == "" {
@@ -117,9 +121,12 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true, Logger: logger})
 
 	mux := http.NewServeMux()
-	// Only POST: the mux answers GET and DELETE with 405.
+	// Only POST is MCP: the mux answers DELETE with 405, and so does any GET
+	// but a browser's (browserGet).
 	serve := http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime)
+	browse := http.HandlerFunc(h.browserGet)
 	mux.Handle("POST "+resource.Path, serve)
+	mux.Handle("GET "+resource.Path, browse)
 	mux.Handle(metadataPath, h.metadata(cfg.Resource))
 	// A person in several accounts may name one in the path, /mcp/2: a label
 	// for the clients that keep one connector per URL with the query dropped.
@@ -127,9 +134,16 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	// the app in as it. Like the query, the server ignores both and the grant
 	// decides; each label is a resource of its own, with its own metadata.
 	mux.Handle("POST "+resource.Path+"/{label}", withLabel(serve))
+	mux.Handle("GET "+resource.Path+"/{label}", withLabel(browse))
 	mux.Handle(metadataPath+"/{label}", withLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.metadata(cfg.Resource+"/"+r.PathValue("label")).ServeHTTP(w, r)
 	})))
+	if token := strings.TrimSpace(cfg.OpenAIChallenge); token != "" {
+		mux.HandleFunc("GET /.well-known/openai-apps-challenge", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			io.WriteString(w, token)
+		})
+	}
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/x-icon")
@@ -167,6 +181,21 @@ type grant struct {
 }
 
 type grantKey struct{}
+
+// browserGet answers a GET on the resource: a person who opened the link in a
+// browser, which asks for HTML, goes to the app's page about connecting an
+// app. Any other GET, an MCP client probing for an event stream above all,
+// keeps its 405, since this server holds no stream open. The answer depends
+// on Accept, so it says so to any cache.
+func (h *hosted) browserGet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Vary", "Accept")
+	if strings.Contains(strings.ToLower(strings.Join(r.Header.Values("Accept"), ",")), "text/html") {
+		http.Redirect(w, r, h.upstream+"/ai", http.StatusFound)
+		return
+	}
+	w.Header().Set("Allow", http.MethodPost)
+	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+}
 
 // serveMCP signs the request in, then lets the MCP handler answer it. Every
 // challenge is HTTP: a client signs in on a 401 and steps up on a 403 with

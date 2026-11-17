@@ -90,6 +90,11 @@ The environment alone:
 | `CHALET_MCP_RESOURCE` | This server's URL, as people paste it | `https://mcp.chalet.do/mcp` |
 | `CHALET_MCP_LISTEN` | Where it listens | `:8080` |
 | `CHALET_MCP_CLIENT_SECRET` | Its client secret at Chalet | none: required |
+| `CHALET_OPENAI_APPS_CHALLENGE` | The token a plugin directory asks this host to show at `/.well-known/openai-apps-challenge` | none: the path is a 404 |
+
+A browser's `GET` on the link (one that accepts `text/html`) goes to Chalet's
+page about connecting (`<CHALET_URL>/ai`); any other `GET`, an event stream
+probe above all, keeps its 405. Both send `Vary: Accept`.
 
 `http://` is accepted for localhost alone. Without the secret the server does
 not start: it says so in one line and exits, so a deploy without it fails its
