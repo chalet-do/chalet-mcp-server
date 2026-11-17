@@ -46,6 +46,9 @@ type Config struct {
 	// ClientSecret is this server's own credential for the exchange, as the
 	// client chalet-mcp-server. New refuses a Config without it (ErrNoSecret).
 	ClientSecret string
+	// OpenAIChallenge is the token ChatGPT's plugin directory asks this host
+	// to show, to prove the domain is Chalet's. Empty, the path is a 404.
+	OpenAIChallenge string
 }
 
 // The client this server is at the app's token endpoint: the app makes no
@@ -79,9 +82,10 @@ const (
 var requestBudget = 45 * time.Second
 
 // New is the server's HTTP handler: a POST to the resource's path is MCP,
-// stateless, answered in JSON; GET /up is the health check; and the
-// resource's metadata (RFC 9728) says where a client signs in. Any query
-// string is ignored: the grant decides the account.
+// stateless, answered in JSON; a browser's GET there goes to the app's page
+// about connecting; GET /up is the health check; and the resource's metadata
+// (RFC 9728) says where a client signs in. Any query string is ignored: the
+// grant decides the account.
 func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) {
 	if err := chalet.CheckBaseURL(cfg.Upstream); err != nil {
 		return nil, fmt.Errorf("upstream: %w", err)
@@ -117,9 +121,11 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true, Logger: logger})
 
 	mux := http.NewServeMux()
-	// Only POST: the mux answers GET and DELETE with 405.
+	// Only POST is MCP: the mux answers DELETE with 405, and so does a GET that
+	// asks for an event stream (browserGet).
 	serve := http.TimeoutHandler(http.HandlerFunc(h.serveMCP), requestBudget, outOfTime)
 	mux.Handle("POST "+resource.Path, serve)
+	mux.Handle("GET "+resource.Path, h.browserGet())
 	mux.Handle(metadataPath, h.metadata(cfg.Resource))
 	// A person in several accounts may name one in the path, /mcp/2: a label
 	// for the clients that keep one connector per URL with the query dropped.
@@ -127,9 +133,16 @@ func New(cfg Config, version string, logger *slog.Logger) (http.Handler, error) 
 	// the app in as it. Like the query, the server ignores both and the grant
 	// decides; each label is a resource of its own, with its own metadata.
 	mux.Handle("POST "+resource.Path+"/{label}", withLabel(serve))
+	mux.Handle("GET "+resource.Path+"/{label}", withLabel(h.browserGet()))
 	mux.Handle(metadataPath+"/{label}", withLabel(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.metadata(cfg.Resource+"/"+r.PathValue("label")).ServeHTTP(w, r)
 	})))
+	if cfg.OpenAIChallenge != "" {
+		mux.HandleFunc("GET /.well-known/openai-apps-challenge", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			io.WriteString(w, cfg.OpenAIChallenge)
+		})
+	}
 	mux.HandleFunc("GET /up", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok\n") })
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/x-icon")
@@ -167,6 +180,21 @@ type grant struct {
 }
 
 type grantKey struct{}
+
+// browserGet answers a GET on the resource: a person who opened the link in a
+// browser goes to the app's page about connecting an AI app, and a client
+// that asks for an event stream keeps its 405, since this server holds none
+// open.
+func (h *hosted) browserGet() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		http.Redirect(w, r, h.upstream+"/ai", http.StatusFound)
+	})
+}
 
 // serveMCP signs the request in, then lets the MCP handler answer it. Every
 // challenge is HTTP: a client signs in on a 401 and steps up on a 403 with

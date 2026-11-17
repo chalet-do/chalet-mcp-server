@@ -363,10 +363,38 @@ func TestAnswersItsOwnRoutes(t *testing.T) {
 	if icon := answer("GET", "/favicon.ico"); icon.Code != 200 || icon.Header().Get("Content-Type") != "image/x-icon" || !bytes.Equal(icon.Body.Bytes(), favicon) || len(favicon) == 0 {
 		t.Errorf("/favicon.ico = %d %s, %d bytes", icon.Code, icon.Header().Get("Content-Type"), icon.Body.Len())
 	}
-	for _, method := range []string{"GET", "DELETE"} {
-		if rec := answer(method, "/mcp"); rec.Code != http.StatusMethodNotAllowed {
-			t.Errorf("%s /mcp = %d", method, rec.Code)
+	if rec := answer("DELETE", "/mcp"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("DELETE /mcp = %d", rec.Code)
+	}
+	// A browser goes to the page about connecting; a client asking for an
+	// event stream is told this server holds none.
+	for _, path := range []string{"/mcp", "/mcp/2"} {
+		if rec := answer("GET", path); rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://chalet.do/ai" {
+			t.Errorf("a browser's GET %s = %d %q", path, rec.Code, rec.Header().Get("Location"))
 		}
+	}
+	stream := httptest.NewRequest("GET", "/mcp", nil)
+	stream.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, stream)
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Errorf("a stream's GET /mcp = %d, Allow %q", rec.Code, rec.Header().Get("Allow"))
+	}
+	if rec := answer("GET", "/.well-known/openai-apps-challenge"); rec.Code != http.StatusNotFound {
+		t.Errorf("the challenge with none set = %d", rec.Code)
+	}
+}
+
+// ChatGPT's plugin directory proves the domain by a token this host shows.
+func TestShowsTheOpenAIChallenge(t *testing.T) {
+	handler, err := New(Config{Upstream: "https://chalet.do", Resource: "https://mcp.chalet.do/mcp", ClientSecret: "secret", OpenAIChallenge: "token-123"}, "test", slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/.well-known/openai-apps-challenge", nil))
+	if rec.Code != 200 || rec.Body.String() != "token-123" || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
+		t.Errorf("challenge = %d %q %q", rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"))
 	}
 }
 
