@@ -3,3 +3,4 @@
 # A local chalet-cli checkout for development (README); never committed.
 /go.work
 /go.work.sum
+plugin/*.zip

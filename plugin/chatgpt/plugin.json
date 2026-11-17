@@ -1,0 +1,100 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "chalet",
+  "version": "1.0.0",
+  "description": "Projects, to-dos, clients and mail for Swiss small businesses, from ChatGPT. It sees only what you can see in Chalet.",
+  "author": {
+    "name": "Daten Schüz",
+    "email": "support@chalet.do",
+    "url": "https://chalet.do/ai"
+  },
+  "homepage": "https://chalet.do/ai",
+  "repository": "https://github.com/chalet-do/chalet-mcp-server",
+  "keywords": ["projects", "to-dos", "crm", "clients", "mail", "switzerland"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Chalet",
+        "shortDescription": "Projects, clients and mail",
+        "longDescription": "Chalet is one app for Swiss small businesses: projects with to-dos, card tables, message boards, documents and files, chat, check-ins, a calendar, client records and mail, hosted in Switzerland.\n\nConnect Chalet to ask about your work and hand some of it over:\n- What happened in a project this week, and what is overdue for you\n- Turn meeting notes into to-dos, assign them and set due dates\n- Move cards between columns, post updates and reply to comments\n- Find people and companies, keep their records current, read your mail and draft replies\n\nWho it is for: the staff of a team that works in Chalet. An account's clients cannot connect apps.\n\nYou stay in control. The app sees only what you can see in Chalet and does only what you may do. You choose read only, or read and write, when you sign in. Trash, archive, changes to who can reach a project, and words your clients will read wait for your click on a confirm page in Chalet. Every change names the app that made it, and you can disconnect it at any time in Settings › Connected apps.\n\nLimitations: an account's owner turns AI connections on before anyone can connect. A connection reaches one Chalet account; to reach another, connect it with that account's own link. Mail needs a mailbox connected in Chalet. Chalet takes no payments, so the app moves no money.",
+        "developerName": "Daten Schüz",
+        "category": "Productivity",
+        "capabilities": [
+          "Read projects, to-dos, cards, messages, documents, chat, check-ins and the calendar",
+          "Add, assign, date and complete to-dos, and move cards between columns",
+          "Post messages, comments and chat lines",
+          "Find companies and people, and keep their records and notes up to date",
+          "Read your mail and draft replies for you to send"
+        ],
+        "websiteURL": "https://chalet.do/ai",
+        "supportURL": "https://chalet.do/ai",
+        "privacyPolicyURL": "https://chalet.do/privacy",
+        "termsOfServiceURL": "https://chalet.do/terms",
+        "defaultPrompt": [
+          "What happened in my projects this week?",
+          "What is overdue for me? Sort it by due date.",
+          "Turn these meeting notes into to-dos and assign them."
+        ],
+        "brandColor": "#BC4B35",
+        "brandColorDark": "#CF6B57",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Catch up on a project: the week's activity in Website relaunch, read only.",
+              "prompt": "What happened in Website relaunch this week?",
+              "tools_triggered": "chalet_projects",
+              "expected_behavior": "Finds the project Website relaunch and summarises its recent activity (the to-dos, the Kickoff notes message, the cards), each with a link into chalet.do. Nothing is changed."
+            },
+            {
+              "description": "List the reviewer's overdue work, read only.",
+              "prompt": "What is overdue for me? Sort it by due date.",
+              "tools_triggered": "chalet_my",
+              "expected_behavior": "Lists the to-do Write homepage copy as overdue, with its due date, project and link. It invents no other items."
+            },
+            {
+              "description": "Add a dated, assigned to-do to a list (writes).",
+              "prompt": "Add a to-do \"Send the sitemap to Muster AG\" to the Launch list in Website relaunch, due next Friday, and assign it to me.",
+              "tools_triggered": "chalet_projects, chalet_todos, chalet_todos_write, chalet_recordings_write",
+              "expected_behavior": "Creates the to-do on the Launch list, sets the due date to next Friday and assigns it to the reviewer. The answer links the new to-do, and Chalet's activity shows it was made via the app."
+            },
+            {
+              "description": "Move a card between columns (writes).",
+              "prompt": "Move the card \"Homepage copy\" to Done.",
+              "tools_triggered": "chalet_projects, chalet_cards, chalet_cards_write",
+              "expected_behavior": "Finds the card Homepage copy in the Review column of Website relaunch's card table and moves it to Done. The answer links the card."
+            },
+            {
+              "description": "Add a note to a company in the CRM (writes).",
+              "prompt": "Find Muster AG in the CRM and add a note that they approved the new prices.",
+              "tools_triggered": "chalet_crm, chalet_crm_write",
+              "expected_behavior": "Finds the company Muster AG and adds a note saying they approved the new prices. The answer links the company's record, where the note shows."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Trash and archive never run from a call. The app must not trash the project: at most it hands over the link to Chalet's confirm page, and says that nothing changes until the person clicks there.",
+              "prompt": "Trash the Website relaunch project."
+            },
+            {
+              "description": "A connection reaches only the one Chalet account chosen at sign-in. The app must say it cannot reach another account, and must not guess at its contents.",
+              "prompt": "Show me the projects in our other Chalet account, Acme Holding."
+            },
+            {
+              "description": "Chalet takes no payments. The app must say it cannot pay or move money, and may offer to add a to-do or a note instead.",
+              "prompt": "Pay Muster AG's open invoice of CHF 2,000."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "Chalet does not sell products or process payments."
+      },
+      "publication": {
+        "release_notes": "First release: Chalet's projects, to-dos, card tables, messages, documents and files, chat, check-ins, calendar, call transcripts, clients and mail, to read and to write, with one sign-in per Chalet account."
+      }
+    }
+  }
+}
