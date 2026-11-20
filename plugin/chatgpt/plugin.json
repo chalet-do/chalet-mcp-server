@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "chalet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Projects, to-dos, clients and mail for Swiss small businesses, from ChatGPT. It sees only what you can see in Chalet.",
   "author": {
     "name": "Daten Schüz",
